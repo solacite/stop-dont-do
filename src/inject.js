@@ -589,98 +589,33 @@
     body.sdd-valorant, body.sdd-valorant *${NOT_ICONS} { font-family: Bahnschrift, "DIN Next", "D-DIN", "Arial Narrow", sans-serif !important; }
     body.sdd-valorant * { border-radius: 0 !important; }
     body.sdd-valorant .c-avatar img, body.sdd-valorant .c-base_icon { border-radius: 0 !important; }
-    /* let the animated background (#sdd-val-fx) show through the main panes */
-    body.sdd-valorant .p-view_contents--primary,
-    body.sdd-valorant .p-view_contents--primary .c-scrollbar__hider,
-    body.sdd-valorant .p-view_header--primary-background { background: color-mix(in srgb, var(--sdd-bg) 55%, transparent) !important; }
-    body.sdd-valorant .p-view_contents--primary .c-scrollbar__hider { background: transparent !important; }
-    body.sdd-valorant .p-view_contents--sidebar { background: color-mix(in srgb, var(--sdd-side) 82%, transparent) !important; backdrop-filter: blur(2px); }
+    /* the agent trailer plays muted behind slack; panes go see-through only while it's on */
+    body.sdd-valorant.sdd-video .p-view_contents--primary,
+    body.sdd-valorant.sdd-video .p-view_header--primary-background { background: color-mix(in srgb, var(--sdd-bg) 80%, transparent) !important; }
+    body.sdd-valorant.sdd-video .p-view_contents--primary .c-scrollbar__hider { background: transparent !important; }
+    body.sdd-valorant.sdd-video .p-view_contents--sidebar { background: color-mix(in srgb, var(--sdd-side) 88%, transparent) !important; }
     body.sdd-valorant .c-message_kit__background, body.sdd-valorant .c-virtual_list__item { background-color: transparent; }
 
-    #sdd-val-fx { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: var(--sdd-bg); }
-    #sdd-val-fx > * { position: absolute; will-change: transform, opacity; }
-    #sdd-val-fx .glow {
-      inset: 0;
-      background:
-        radial-gradient(70% 60% at 100% 100%, color-mix(in srgb, var(--sdd-acc) 22%, transparent), transparent 70%),
-        radial-gradient(50% 50% at 0% 0%, color-mix(in srgb, var(--sdd-fg) 6%, transparent), transparent 70%),
-        linear-gradient(160deg, transparent 40%, rgba(0,0,0,.35));
-      animation: sdd-pulse 7s ease-in-out infinite alternate;
+    #sdd-val-video { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: var(--sdd-bg); }
+    #sdd-val-video iframe {
+      position: absolute; top: 50%; left: 50%; border: 0;
+      width: max(100vw, 177.78vh); height: max(100vh, 56.25vw);
+      transform: translate(-50%, -50%) scale(1.15);
+      opacity: .22; filter: blur(3px) saturate(.7);
     }
-    #sdd-val-fx .grid {
-      inset: 0;
-      background:
-        linear-gradient(color-mix(in srgb, var(--sdd-fg) 4%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
-        linear-gradient(90deg, color-mix(in srgb, var(--sdd-fg) 4%, transparent) 1px, transparent 1px) 0 0 / 48px 48px;
-      mask-image: radial-gradient(80% 80% at 70% 60%, #000, transparent 75%);
-    }
-    #sdd-val-fx .lines {
-      top: -10%; bottom: -10%; left: -120px; right: -120px;
-      background: repeating-linear-gradient(135deg, transparent 0 38px, color-mix(in srgb, var(--sdd-fg) 3%, transparent) 38px 40px);
-      animation: sdd-lines 6s linear infinite;
-    }
-    #sdd-val-fx .shard {
-      width: 46vw; height: 140vh; top: -20vh;
-      background: linear-gradient(180deg, color-mix(in srgb, var(--sdd-acc) 16%, transparent), color-mix(in srgb, var(--sdd-acc) 3%, transparent));
-      clip-path: polygon(38% 0, 100% 0, 62% 100%, 0 100%);
-    }
-    #sdd-val-fx .s1 { right: -8vw; animation: sdd-drift 22s ease-in-out infinite alternate; }
-    #sdd-val-fx .s2 { right: 18vw; width: 14vw; opacity: .55; animation: sdd-drift 30s ease-in-out -9s infinite alternate-reverse; }
-    #sdd-val-fx .s3 {
-      right: 30vw; width: 3px; background: color-mix(in srgb, var(--sdd-acc) 50%, transparent); clip-path: none;
-      transform: skewX(-21deg); animation: sdd-drift 26s ease-in-out -4s infinite alternate;
-    }
-    #sdd-val-fx .slash {
-      top: -30%; height: 160%; width: 160px; left: 0;
-      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sdd-acc) 35%, transparent) 45%, color-mix(in srgb, #fff 30%, var(--sdd-acc)) 50%, transparent 55%);
-      transform: translateX(-30vw) skewX(-21deg); opacity: 0;
-      animation: sdd-slash 11s cubic-bezier(.7,0,.3,1) 2s infinite;
-    }
-    #sdd-val-fx .scan {
-      inset: 0; opacity: .5;
-      background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
-    }
-    #sdd-val-fx .mark {
-      right: 3vw; bottom: 4vh; width: 22vw; max-width: 340px; aspect-ratio: 1; opacity: .07; color: var(--sdd-acc);
-      animation: sdd-pulse 7s ease-in-out infinite alternate-reverse;
-    }
-    @keyframes sdd-lines { to { transform: translate3d(-56.57px, 0, 0); } }
-    @keyframes sdd-drift { from { transform: translate3d(0, -2vh, 0) skewX(-2deg); } to { transform: translate3d(-6vw, 2vh, 0) skewX(2deg); } }
-    @keyframes sdd-pulse { from { opacity: .75; } to { opacity: 1; } }
-    @keyframes sdd-slash {
-      0% { transform: translateX(-30vw) skewX(-21deg); opacity: 0; }
-      8% { opacity: 1; }
-      22% { transform: translateX(120vw) skewX(-21deg); opacity: 0; }
-      100% { transform: translateX(120vw) skewX(-21deg); opacity: 0; }
+    #sdd-val-video::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--sdd-bg) 70%, transparent), transparent 60%),
+                  linear-gradient(0deg, color-mix(in srgb, var(--sdd-bg) 60%, transparent), transparent 40%);
     }
 
-    /* motion on the ui itself */
-    body.sdd-valorant .p-channel_sidebar__channel, body.sdd-valorant [data-qa="channel-sidebar-chan"],
-    body.sdd-valorant .p-channel_sidebar__link {
-      background-image: linear-gradient(90deg, color-mix(in srgb, var(--sdd-acc) 28%, transparent), transparent) !important;
-      background-repeat: no-repeat !important; background-size: 0% 100% !important;
-      transition: background-size .25s ease, box-shadow .2s ease, transform .2s ease !important;
-    }
-    body.sdd-valorant .p-channel_sidebar__channel:hover, body.sdd-valorant [data-qa="channel-sidebar-chan"]:hover,
-    body.sdd-valorant .p-channel_sidebar__link:hover {
-      background-size: 100% 100% !important; box-shadow: inset 2px 0 0 var(--sdd-acc) !important; transform: translateX(2px);
-    }
-    body.sdd-valorant [data-qa-channel-sidebar-channel-is-selected="true"] { animation: sdd-select .32s cubic-bezier(.2,.8,.2,1); }
-    @keyframes sdd-select {
-      from { clip-path: polygon(0 0, 0 0, 0 calc(100% - 9px), 0 100%, 0 100%); }
-      to { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%); }
-    }
-    body.sdd-valorant .c-message_kit__background { transition: box-shadow .2s ease, background-color .2s ease; }
+    /* plain hover states, no motion */
+    body.sdd-valorant [data-qa="channel-sidebar-chan"]:hover { box-shadow: inset 2px 0 0 var(--sdd-acc) !important; }
     body.sdd-valorant .c-message_kit__background:hover {
       box-shadow: inset 2px 0 0 var(--sdd-acc); background-color: color-mix(in srgb, var(--sdd-fg) 4%, transparent) !important;
     }
-    body.sdd-valorant .p-tab_rail__button { transition: transform .15s ease; }
-    body.sdd-valorant .p-tab_rail__button:hover { transform: translateY(-2px); }
     body.sdd-valorant .p-tab_rail__button:hover .p-tab_rail__button__label { color: var(--sdd-acc) !important; }
-    body.sdd-valorant .c-tabs__tab { transition: box-shadow .2s ease, color .2s ease; }
-    body.sdd-valorant .c-tabs__tab:hover { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--sdd-acc) 50%, transparent) !important; }
-    body.sdd-valorant .p-top_nav__search { border-bottom: 1px solid color-mix(in srgb, var(--sdd-fg) 25%, transparent) !important; transition: border-color .2s; }
-    body.sdd-valorant .p-top_nav__search:hover { border-color: var(--sdd-acc) !important; }
+    body.sdd-valorant .p-top_nav__search { border-bottom: 1px solid color-mix(in srgb, var(--sdd-fg) 25%, transparent) !important; }
     /* bahnschrift reads heavy at slack's weights, so lighten the everyday text */
     body.sdd-valorant .p-rich_text_section, body.sdd-valorant .p-rich_text_list, body.sdd-valorant .c-message_kit__blocks,
     body.sdd-valorant .c-message_attachment, body.sdd-valorant .ql-editor, body.sdd-valorant .p-view_header__topic {
@@ -696,9 +631,6 @@
         linear-gradient(var(--sdd-fg2), var(--sdd-fg2)) right bottom / 12px 2px no-repeat,
         linear-gradient(var(--sdd-fg2), var(--sdd-fg2)) right bottom / 2px 12px no-repeat,
         color-mix(in srgb, var(--sdd-bg) 88%, transparent) !important;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      #sdd-val-fx *, body.sdd-valorant * { animation: none !important; transition: none !important; }
     }
     body.sdd-valorant [data-qa^="channel_sidebar__section_heading_label"],
     body.sdd-valorant .p-tab_rail__button__label,
@@ -774,24 +706,29 @@
     mountFx();
   }
 
-  // valorant's moving background lives inside slack's own background layer
-  const FX_MARK = `<svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 18l40 64h20L24 18zM96 18L70 58H50l26-40z"/></svg>`;
+  // the hush agent trailer, muted and looping, inside slack's own background layer.
+  // it's youtube's embed player, so nothing is downloaded.
+  const VIDEO_ID = "AfcCyTsh4ag";
+  const VIDEO_SRC =
+    `https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&mute=1&loop=1&playlist=${VIDEO_ID}` +
+    "&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1" +
+    `&origin=${encodeURIComponent(location.origin)}`;
+  settings.video ??= true;
+
   function mountFx() {
-    const want = document.body.classList.contains("sdd-valorant");
-    let fx = document.getElementById("sdd-val-fx");
-    if (!want) return fx?.remove();
+    const want = document.body.classList.contains("sdd-valorant") && settings.video;
+    document.body.classList.toggle("sdd-video", want);
+    let box = document.getElementById("sdd-val-video");
+    if (!want) return box?.remove();
     const host = document.querySelector(".p-theme_background");
-    if (!host || fx?.parentElement === host) return;
-    fx?.remove();
-    fx = h(`<div id="sdd-val-fx">
-      <div class="glow"></div><div class="grid"></div><div class="lines"></div>
-      <div class="shard s1"></div><div class="shard s2"></div><div class="shard s3"></div>
-      <div class="slash"></div><div class="mark">${FX_MARK}</div><div class="scan"></div>
-    </div>`);
-    host.appendChild(fx);
+    if (!host || box?.parentElement === host) return;
+    box?.remove();
+    box = h(`<div id="sdd-val-video"><iframe src="${VIDEO_SRC}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Hush agent trailer"></iframe></div>`);
+    host.appendChild(box);
   }
   cleanups.push(() => {
-    document.getElementById("sdd-val-fx")?.remove();
+    document.getElementById("sdd-val-video")?.remove();
+    document.body.classList.remove("sdd-video");
     themeStyle?.remove();
     document.body.classList.remove(...Object.keys(THEMES).map((t) => `sdd-${t}`));
   });
@@ -1087,7 +1024,11 @@
           .join("")}</div>`
       : "";
     const field = (k, label) => `<label>${label}<input type="color" data-k="${k}" value="${b[k]}"></label>`;
-    wrap.innerHTML = `${presets}<div class="picks">${field("bg", "Background")}${field("side", "Sidebar")}${field("fg", "Text")}${field("accent", "Accent")}
+    const video =
+      name === "valorant"
+        ? `<label class="ui-item"><input type="checkbox" data-act="video" ${settings.video ? "checked" : ""}><span class="name">Hush trailer in the background</span></label>`
+        : "";
+    wrap.innerHTML = `${presets}${video}<div class="picks">${field("bg", "Background")}${field("side", "Sidebar")}${field("fg", "Text")}${field("accent", "Accent")}
       <button class="btn" data-act="reset" title="Back to this theme's colours">Reset</button></div>`;
 
     let pending = 0;
@@ -1113,6 +1054,11 @@
         renderThemes();
       }),
     );
+    wrap.querySelector('[data-act="video"]')?.addEventListener("change", (e) => {
+      settings.video = e.target.checked;
+      save();
+      mountFx();
+    });
     wrap.querySelector('[data-act="reset"]').addEventListener("click", () => {
       delete settings.colors[name];
       save();
