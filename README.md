@@ -8,7 +8,7 @@ a mod for the slack desktop app.
 - **slack buttons:** untick any of slack's own buttons to hide them: the menu, workspace switcher, history, agents and help in the top bar; the workspace icon, home, dms, activity, files, to-dos, more, create new and focus mode in the left rail; and find a conversation, threads, huddles, drafts & sent, saved and directories in the sidebar.
 - **themes:** slack, google docs, valorant, paper, midnight and terminal. every theme's colours can be changed (background, sidebar, text, accent). valorant has agent presets.
   - google docs: white everywhere, arial, google blue for links and the selected channel.
-  - valorant: dark navy and red, bahnschrift, uppercase labels, sharp corners and clipped edges. adds a fake "home" row at the top of the channel list. clicking it covers the message view with a valorant-style home page playing the hush agent trailer ("rise and fall", muted, through youtube's embed player, with a sound toggle). play, esc, or picking any channel takes you back. untick it in the panel to turn it off.
+  - valorant: dark navy and red, bahnschrift, uppercase labels, sharp corners and clipped edges. adds a "dash" button to the left rail. it opens a valorant-style home page over the channel sidebar and messages, playing the hush agent trailer ("rise and fall", muted, through youtube's embed player, with a sound toggle). play, esc, dash again or any other rail tab takes you back. untick it in the panel to turn it off.
 
 open the panel with the **sidebar** button in the left rail (under more), or ctrl+alt+h.
 

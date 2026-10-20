@@ -350,9 +350,6 @@
     }
     applying = true;
     try {
-      // room at the top for the valorant home row
-      ensureHomeRow(list);
-      const extra = homeEnabled() ? HOME_SLOT : 0;
       const rendered = [...list.children]
         .filter((el) => el.classList.contains("c-virtual_list__item"))
         .map((el) => ({ el, ...describe(el), top: realTop(el) }))
@@ -398,14 +395,14 @@
             fixHeadingBold(r.el, r.sec);
             markGroupHeading(r.el, r.sec);
           }
-          const s = (shiftAt.get(r.key) || 0) - extra;
+          const s = shiftAt.get(r.key) || 0;
           if (s || r.el.dataset.sddTop !== undefined) setTop(r.el, r.top, r.top - s);
         }
       }
 
       const fullHeight = realHeight(list);
       if (fullHeight) {
-        const v = `${Math.max(0, fullHeight - shift + extra)}px`;
+        const v = `${Math.max(0, fullHeight - shift)}px`;
         if (list.style.height !== v) list.style.height = v;
         list.dataset.sddH = v;
         list.dataset.sddOrigH = fullHeight;
@@ -642,25 +639,11 @@
     body.sdd-valorant .c-avatar img, body.sdd-valorant .c-base_icon { border-radius: 0 !important; }
     body.sdd-valorant .c-message_kit__background, body.sdd-valorant .c-virtual_list__item { background-color: transparent; }
 
-    /* the fake "home" row at the top of the channel list */
-    #sdd-home-row {
-      position: absolute; left: 0; right: 0; top: 6px; height: 28px; padding: 0 8px; box-sizing: border-box; z-index: 1;
-    }
-    #sdd-home-row button {
-      width: 100%; height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; cursor: pointer;
-      background: none; color: var(--sdd-fg); font: inherit; font-size: 15px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
-    }
-    #sdd-home-row button:hover { box-shadow: inset 2px 0 0 var(--sdd-acc); background: color-mix(in srgb, var(--sdd-fg) 6%, transparent); }
-    #sdd-home-row svg { width: 16px; height: 16px; color: var(--sdd-acc); flex: none; }
-    body.sdd-home-open #sdd-home-row button {
-      background: var(--sdd-acc); color: var(--sdd-accfg); box-shadow: inset 3px 0 0 var(--sdd-accfg);
-      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%);
-    }
-    body.sdd-home-open #sdd-home-row svg { color: var(--sdd-accfg); }
-    body.sdd-home-open [data-qa-channel-sidebar-channel-is-selected="true"],
-    body.sdd-home-open [data-qa-channel-sidebar-channel-is-selected="true"] * { background: none !important; color: inherit !important; box-shadow: none !important; clip-path: none !important; }
+    /* while dash is open, slack's own selected tab steps back */
+    body.sdd-dash-open .p-tab_rail__tab_menu > :not(#sdd-dash-holder) .p-tab_rail__button--active { opacity: .55; }
+    body.sdd-dash-open .p-tab_rail__tab_menu > :not(#sdd-dash-holder) .p-tab_rail__button--active .p-tab_rail__button__label { color: inherit !important; }
 
-    /* the valorant-style home page that covers the message view */
+    /* the valorant-style home page (dash) */
     #sdd-home {
       position: fixed; z-index: 50; overflow: hidden; background: #0f1923; color: #ece8e1;
       font-family: Bahnschrift, "DIN Next", "Arial Narrow", sans-serif;
@@ -803,52 +786,60 @@
     mountFx();
   }
 
-  // valorant gets a fake "home" row at the top of the channel list. clicking it covers
-  // the message view with a valorant-style home page playing the hush agent trailer
+  // valorant gets a "dash" button in the left rail. it opens a valorant-style home page
+  // over the channel sidebar and messages, playing the hush agent trailer
   // (youtube's embed player, so nothing is downloaded).
   const VIDEO_ID = "AfcCyTsh4ag";
   const VIDEO_SRC =
     `https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&mute=1&loop=1&playlist=${VIDEO_ID}` +
     "&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1" +
     `&origin=${encodeURIComponent(location.origin)}`;
-  const HOME_SLOT = 38;
   settings.home ??= true;
   delete settings.video;
 
   const homeEnabled = () => settings.theme === "valorant" && settings.home;
-  const HOME_ICON = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5L10 3l7 6.5V17h-4.5v-4.5h-5V17H3z"/></svg>`;
+  const DASH_ICON = `<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M3 4l5.5 12h3L17 4h-3.6L10 11.6 6.6 4z"/></svg>`;
 
-  function ensureHomeRow(list) {
-    const row = document.getElementById("sdd-home-row");
-    if (!homeEnabled()) return row?.remove();
-    if (row?.parentElement === list) return;
-    row?.remove();
-    const el = h(`<div id="sdd-home-row"><button type="button">${HOME_ICON}<span>Home</span></button></div>`);
-    el.querySelector("button").addEventListener("click", (e) => {
-      e.stopPropagation();
-      homeOpen ? closeHome() : openHome();
-    });
-    list.prepend(el);
+  let dashEl = null;
+  function mountDash() {
+    if (!homeEnabled()) {
+      dashEl?.remove();
+      dashEl = null;
+      return;
+    }
+    if (dashEl?.isConnected) return;
+    dashEl = cloneRailButton("sdd-dash-holder", "Dash", "Dash", DASH_ICON, () => (homeOpen ? closeHome() : openHome()));
+    if (!dashEl) return;
+    // sit between slack's "more" and our "sidebar" button
+    const sidebarBtn = document.getElementById("sdd-rail-holder");
+    if (sidebarBtn) sidebarBtn.before(dashEl);
   }
 
   let homeOpen = false;
   let homeEl = null;
   let muted = true;
 
+  // covers everything right of the rail and under the top bar
   function placeHome() {
-    const target = document.querySelector(".p-view_contents--primary");
-    if (!homeEl || !target) return;
-    const r = target.getBoundingClientRect();
-    Object.assign(homeEl.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-    homeEl.style.setProperty("--w", `${r.width}px`);
-    homeEl.style.setProperty("--h", `${r.height}px`);
+    if (!homeEl) return;
+    const ws = document.querySelector(".p-client_workspace_wrapper")?.getBoundingClientRect();
+    if (!ws) return;
+    const side = document.querySelector(".p-view_contents--sidebar")?.getBoundingClientRect();
+    const rail = document.querySelector(".p-tab_rail__tab_menu")?.getBoundingClientRect();
+    const left = side?.width ? side.left : (rail?.right ?? ws.left) + 8;
+    const top = side?.height ? side.top : ws.top;
+    const width = ws.right - left;
+    const height = ws.bottom - top;
+    Object.assign(homeEl.style, { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` });
+    homeEl.style.setProperty("--w", `${width}px`);
+    homeEl.style.setProperty("--h", `${height}px`);
   }
 
   function openHome() {
     if (!homeEnabled()) return;
     homeEl?.remove();
     muted = true;
-    homeEl = h(`<section id="sdd-home" aria-label="Home">
+    homeEl = h(`<section id="sdd-home" aria-label="Dash">
       <iframe src="${VIDEO_SRC}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Hush agent trailer"></iframe>
       <div class="shade"></div>
       <div class="nav"><span class="on">Home</span><span>Agents</span><span>Career</span><span>Collection</span><span>Battlepass</span><span>Store</span></div>
@@ -875,7 +866,8 @@
     placeHome();
     homeOpen = true;
     homeRoute = location.pathname;
-    document.body.classList.add("sdd-home-open");
+    dashEl?.querySelector("button")?.classList.add("p-tab_rail__button--active");
+    document.body.classList.add("sdd-dash-open");
   }
 
   let homeRoute = null;
@@ -883,31 +875,30 @@
     homeEl?.remove();
     homeEl = null;
     homeOpen = false;
-    document.body.classList.remove("sdd-home-open");
+    dashEl?.querySelector("button")?.classList.remove("p-tab_rail__button--active");
+    document.body.classList.remove("sdd-dash-open");
   }
 
-  // picking any real channel, tab or workspace leaves the home page
+  // picking any other rail tab, the search bar or a workspace leaves the dash
   function onLeaveHome(e) {
-    if (!homeOpen || e.target.closest("#sdd-home, #sdd-home-row, #sdd-panel, #sdd-rail-holder")) return;
-    if (e.target.closest(".p-channel_sidebar__list, .p-tab_rail, .p-ia4_top_nav, .p-view_contents--sidebar")) closeHome();
+    if (!homeOpen || e.target.closest("#sdd-home, #sdd-dash-holder, #sdd-panel, #sdd-rail-holder")) return;
+    if (e.target.closest(".p-tab_rail__tab_menu, .p-ia4_top_nav, [data-qa='account_switcher_team_icon']")) closeHome();
   }
   document.addEventListener("click", onLeaveHome, true);
   window.addEventListener("resize", placeHome);
 
-  // called on theme changes and every tick: keeps the row and page in step
+  // called on theme changes and every tick: keeps the button and page in step
   function mountFx() {
-    if (!homeEnabled()) {
-      closeHome();
-      document.getElementById("sdd-home-row")?.remove();
-    } else if (homeOpen) {
+    mountDash();
+    if (!homeEnabled()) closeHome();
+    else if (homeOpen) {
       if (location.pathname !== homeRoute) closeHome();
       else placeHome();
     }
-    scheduleLayout();
   }
   cleanups.push(() => {
     closeHome();
-    document.getElementById("sdd-home-row")?.remove();
+    dashEl?.remove();
     document.removeEventListener("click", onLeaveHome, true);
     window.removeEventListener("resize", placeHome);
     themeStyle?.remove();
@@ -1028,31 +1019,41 @@
 
   const EYE_ICON = `<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.3"/><path d="M3.5 16.5l13-13"/></svg>`;
 
-  // a copy of slack's own "More" rail button, so it matches whatever theme is on.
-  // falls back to a small corner button if the rail isn't there.
+  // a copy of slack's own "More" rail button, so ours match whatever theme is on.
+  // it goes right after "more"; returns null if the rail isn't there.
+  function cloneRailButton(id, label, title, icon, onClick) {
+    const more = document.querySelector('[data-qa="tab_rail_browse_button"]');
+    const anchor = more?.closest(".c-coachmark-anchor");
+    if (!more || !anchor) return null;
+    const btn = more.cloneNode(true);
+    btn.removeAttribute("data-qa");
+    btn.removeAttribute("aria-describedby");
+    btn.classList.remove("p-tab_rail__button--active");
+    btn.setAttribute("aria-label", title);
+    btn.title = title;
+    const svg = btn.querySelector("svg");
+    if (svg) svg.outerHTML = icon;
+    const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT);
+    for (let n; (n = walker.nextNode()); ) if (n.nodeValue.trim()) n.nodeValue = label;
+    const holder = document.createElement("div");
+    holder.id = id;
+    holder.appendChild(btn);
+    anchor.after(holder);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    return holder;
+  }
+
+  // falls back to a small corner button if the rail isn't there
   function mountRailButton() {
     if (fabEl?.isConnected && (fabEl.id === "sdd-rail-holder" || !document.querySelector('[data-qa="tab_rail_browse_button"]'))) return;
     fabEl?.remove();
-    const more = document.querySelector('[data-qa="tab_rail_browse_button"]');
-    const anchor = more?.closest(".c-coachmark-anchor");
-    if (more && anchor) {
-      const btn = more.cloneNode(true);
-      btn.removeAttribute("data-qa");
-      btn.removeAttribute("aria-describedby");
-      btn.setAttribute("aria-label", "Sidebar & themes");
-      btn.title = "Sidebar & themes (Ctrl+Alt+H)";
-      const svg = btn.querySelector("svg");
-      if (svg) svg.outerHTML = EYE_ICON;
-      const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT);
-      for (let n; (n = walker.nextNode()); ) if (n.nodeValue.trim()) n.nodeValue = "Sidebar";
-      const holder = document.createElement("div");
-      holder.id = "sdd-rail-holder";
-      holder.appendChild(btn);
-      anchor.after(holder);
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        togglePanel();
-      });
+    const holder = cloneRailButton("sdd-rail-holder", "Sidebar", "Sidebar & themes (Ctrl+Alt+H)", EYE_ICON, () => togglePanel());
+    if (holder) {
+      // keep dash (if it's there) ahead of us
+      document.getElementById("sdd-dash-holder")?.after(holder);
       fabEl = holder;
     } else {
       fabEl = h(`<button id="sdd-fab" title="Sidebar & themes (Ctrl+Alt+H)">${EYE_ICON}</button>`);
@@ -1206,7 +1207,7 @@
     const field = (k, label) => `<label>${label}<input type="color" data-k="${k}" value="${b[k]}"></label>`;
     const video =
       name === "valorant"
-        ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Home page at the top of the sidebar</span></label>`
+        ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Dash button in the left rail</span></label>`
         : "";
     wrap.innerHTML = `${presets}${video}<div class="picks">${field("bg", "Background")}${field("side", "Sidebar")}${field("fg", "Text")}${field("accent", "Accent")}
       <button class="btn" data-act="reset" title="Back to this theme's colours">Reset</button></div>`;
