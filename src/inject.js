@@ -655,6 +655,7 @@
       width: calc(max(var(--w), var(--h) * 1.7778) * 1.15); height: calc(max(var(--h), var(--w) * .5625) * 1.15);
       transform: translate(-50%, -50%);
     }
+    #sdd-home video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
     #sdd-home .shade {
       position: absolute; inset: 0; pointer-events: none;
       background: linear-gradient(90deg, rgba(15,25,35,.85), rgba(15,25,35,.35) 45%, transparent 70%),
@@ -804,14 +805,38 @@
   }
 
   // valorant gets a "dash" button in the left rail. it opens a valorant-style home page
-  // over the channel sidebar and messages, playing the hush agent trailer
-  // (youtube's embed player, so nothing is downloaded).
-  const VIDEO_ID = "AfcCyTsh4ag";
-  const VIDEO_SRC =
-    `https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&mute=1&loop=1&playlist=${VIDEO_ID}` +
-    "&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1" +
-    `&origin=${encodeURIComponent(location.origin)}`;
+  // over the rail, channel sidebar and messages, looping a video: the hush agent trailer
+  // unless you've set your own link in the panel. youtube links play through youtube's
+  // embed player, so nothing is downloaded; other links play as plain video files.
+  const DEFAULT_VIDEO = "https://www.youtube.com/watch?v=AfcCyTsh4ag";
   settings.home ??= true;
+
+  function youtubeId(url) {
+    const s = String(url || "").trim();
+    if (/^[\w-]{11}$/.test(s)) return s;
+    return s.match(/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/)([\w-]{11})/)?.[1] || null;
+  }
+
+  function dashVideo() {
+    const url = settings.dashVideo || DEFAULT_VIDEO;
+    const id = youtubeId(url);
+    if (!id) return { kind: "file", src: url, custom: true };
+    const src =
+      `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&loop=1&playlist=${id}` +
+      "&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1&cc_load_policy=0" +
+      `&origin=${encodeURIComponent(location.origin)}`;
+    return { kind: "youtube", src, custom: !!settings.dashVideo && url !== DEFAULT_VIDEO };
+  }
+
+  // anything that isn't a youtube link has to at least look like a web address
+  function validVideoLink(url) {
+    if (youtubeId(url)) return true;
+    try {
+      return /^https?:$/.test(new URL(url).protocol);
+    } catch {
+      return false;
+    }
+  }
   delete settings.video;
 
   const homeEnabled = () => settings.theme === "valorant" && settings.home;
@@ -854,8 +879,14 @@
     if (!homeEnabled()) return;
     homeEl?.remove();
     muted = true;
+    const vid = dashVideo();
+    const media =
+      vid.kind === "youtube"
+        ? `<iframe src="${esc(vid.src)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Dash video"></iframe>`
+        : `<video src="${esc(vid.src)}" autoplay muted loop playsinline tabindex="-1"></video>`;
+    const card = vid.custom ? ["Your video", "On loop"] : ["Agent trailer", "Rise and fall"];
     homeEl = h(`<section id="sdd-home" aria-label="Dash">
-      <iframe src="${VIDEO_SRC}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Hush agent trailer"></iframe>
+      ${media}
       <div class="shade"></div>
       <div class="nav">
         <button type="button" class="on">Dash</button>
@@ -880,7 +911,7 @@
         <p class="blurb">Checking the weather in Burlington…</p>
       </div>
       <div class="cards">
-        <button class="card" data-act="sound" type="button"><small>Agent trailer</small><b>Rise and fall</b><div class="snd">🔇 Sound off</div></button>
+        <button class="card" data-act="sound" type="button"><small>${card[0]}</small><b>${card[1]}</b><div class="snd">🔇 Sound off</div></button>
         <button class="card" data-act="back" type="button"><small>Season 26 // Act VI</small><b>Back to Slack</b></button>
       </div>
     </section>`);
@@ -906,7 +937,9 @@
     homeEl.querySelector('[data-act="back"]').addEventListener("click", closeHome);
     homeEl.querySelector('[data-act="sound"]').addEventListener("click", () => {
       muted = !muted;
-      homeEl.querySelector("iframe").contentWindow?.postMessage(JSON.stringify({ event: "command", func: muted ? "mute" : "unMute", args: [] }), "*");
+      const v = homeEl.querySelector("video");
+      if (v) v.muted = muted;
+      else homeEl.querySelector("iframe")?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: muted ? "mute" : "unMute", args: [] }), "*");
       homeEl.querySelector(".snd").textContent = muted ? "🔇 Sound off" : "🔊 Sound on";
     });
     document.body.appendChild(homeEl);
@@ -1097,6 +1130,14 @@
     #sdd-panel .fold.on { color: var(--accfg); background: var(--acc); border-color: var(--acc); }
     #sdd-panel .off > .name { color: var(--fg2); text-decoration: line-through; }
     #sdd-panel input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); cursor: pointer; flex: none; }
+    #sdd-panel .vid { display: flex; flex-direction: column; gap: 4px; }
+    #sdd-panel .vid label { font-size: 11px; color: var(--fg2); }
+    #sdd-panel .vid-row { display: flex; gap: 6px; }
+    #sdd-panel .vid input {
+      flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--fg); outline: none; font-size: 12px;
+    }
+    #sdd-panel .vid input:focus { border-color: var(--acc); }
+    #sdd-panel .vid-note { font-size: 11px; color: var(--fg2); min-height: 14px; }
     #sdd-panel details.ui { padding: 0 0 8px; }
     #sdd-panel details.ui summary { cursor: pointer; list-style: none; user-select: none; }
     #sdd-panel details.ui summary::before { content: "›"; display: inline-block; width: 12px; transition: transform .15s; }
@@ -1324,7 +1365,15 @@
     const field = (k, label) => `<label>${label}<input type="color" data-k="${k}" value="${b[k]}"></label>`;
     const video =
       name === "valorant"
-        ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Dash button in the left rail</span></label>`
+        ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Dash button in the left rail</span></label>
+          <div class="vid">
+            <label for="sdd-dash-video">Dash video</label>
+            <div class="vid-row">
+              <input id="sdd-dash-video" type="url" placeholder="YouTube or video link (blank = Hush trailer)" value="${esc(settings.dashVideo || "")}">
+              <button class="btn" data-act="video-save">Set</button>
+            </div>
+            <div class="vid-note"></div>
+          </div>`
         : "";
     wrap.innerHTML = `${presets}${video}<div class="picks">${field("bg", "Background")}${field("side", "Sidebar")}${field("fg", "Text")}${field("accent", "Accent")}
       <button class="btn" data-act="reset" title="Back to this theme's colours">Reset</button></div>`;
@@ -1352,6 +1401,24 @@
         renderThemes();
       }),
     );
+    const vidInput = wrap.querySelector("#sdd-dash-video");
+    const setVideo = () => {
+      const url = vidInput.value.trim();
+      const note = wrap.querySelector(".vid-note");
+      if (url && !validVideoLink(url)) {
+        note.textContent = "That doesn't look like a YouTube or video link.";
+        return;
+      }
+      settings.dashVideo = url || undefined;
+      save();
+      note.textContent = url ? (youtubeId(url) ? "Set. Dash will loop that YouTube video." : "Set. Dash will loop that video file.") : "Back to the Hush trailer.";
+      if (homeOpen) openHome();
+    };
+    wrap.querySelector('[data-act="video-save"]')?.addEventListener("click", setVideo);
+    vidInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") setVideo();
+      e.stopPropagation();
+    });
     wrap.querySelector('[data-act="home"]')?.addEventListener("change", (e) => {
       settings.home = e.target.checked;
       save();
