@@ -421,8 +421,39 @@
       layoutSidebar();
     });
   };
-  const sidebarObserver = new MutationObserver(scheduleLayout);
+  // mutation callbacks run before the browser paints, so laying out right here
+  // means slack's unfiltered sidebar never reaches the screen
+  const sidebarObserver = new MutationObserver(() => applying || layoutSidebar());
   cleanups.push(() => sidebarObserver.disconnect());
+
+  // slack throws the whole sidebar away and builds a new one when you go to home,
+  // switch workspaces, etc. catch the new one the moment it appears.
+  const mountObserver = new MutationObserver(() => {
+    if (applying) return;
+    const list = document.querySelector(".p-channel_sidebar__list .c-virtual_list__scroll_container");
+    if (list && list !== observedList) layoutSidebar();
+  });
+  cleanups.push(() => mountObserver.disconnect());
+
+  // a plain css backstop for anything the layout pass hasn't reached yet
+  let hideStyle = null;
+  function updateHideCss() {
+    hideStyle ||= document.head.appendChild(Object.assign(document.createElement("style"), { id: "sdd-hide" }));
+    const data = currentData();
+    const secs = new Set(Object.keys(settings.hiddenSections).filter((k) => settings.hiddenSections[k]));
+    if (data) for (const [sec, g] of Object.entries(data.groupOf)) if (settings.foldedGroups[g]) secs.add(sec);
+    const chans = Object.keys(settings.hiddenChannels).filter((k) => settings.hiddenChannels[k]);
+    const rowKeys = Object.keys(ROW_KEYS).filter(isRowHidden);
+    const item = ".p-channel_sidebar__list .c-virtual_list__item";
+    const sels = [
+      ...[...secs].map((s) => `${item}[data-item-key="sectionHeading-${s}"]`),
+      ...[...secs].map((s) => `${item}:has([data-qa-channel-sidebar-channel-section-id="${s}"])`),
+      ...chans.map((c) => `${item}[data-item-key="${c}"]`),
+      ...rowKeys.map((k) => `${item}[data-item-key="${k}"]`),
+    ];
+    hideStyle.textContent = sels.length ? `${sels.join(",\n")} { display: none !important; }` : "";
+  }
+  cleanups.push(() => hideStyle?.remove());
 
   // clicking a "──" divider in the sidebar folds the sections under it
   function onSidebarClick(e) {
@@ -932,6 +963,7 @@
       e.target.checked ? delete settings.hiddenUi[key] : (settings.hiddenUi[key] = true);
       save();
       applyUi();
+      updateHideCss();
       layoutSidebar();
       renderUi();
     });
@@ -1070,6 +1102,7 @@
   function changed() {
     save();
     renderList();
+    updateHideCss();
     layoutSidebar();
   }
 
@@ -1186,8 +1219,10 @@
     buildPanel();
     applyTheme();
     applyUi();
+    updateHideCss();
     layoutSidebar();
-    loadSections(false).then(scheduleLayout, () => {});
+    mountObserver.observe(document.body, { childList: true, subtree: true });
+    loadSections(false).then(() => (updateHideCss(), scheduleLayout()), () => {});
     document.addEventListener("keydown", onKey, true);
     document.addEventListener("click", onSidebarClick, true);
     // slack swaps the sidebar out when switching workspaces; re-check now and then
@@ -1202,7 +1237,7 @@
       const ws = location.pathname.split("/")[2];
       if (ws !== lastWs) {
         lastWs = ws;
-        loadSections(false).then(scheduleLayout, () => {});
+        loadSections(false).then(() => (updateHideCss(), scheduleLayout()), () => {});
         if (panelEl.classList.contains("open")) refreshList(false);
       }
     }, 800);
