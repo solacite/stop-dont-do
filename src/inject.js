@@ -868,10 +868,10 @@
       </div>
       <button class="play" type="button" title="Back to Slack">Play</button>
       <div class="hero">
-        <span class="tag">Time to get slackin'</span>
-        <h1>GO TIME</h1>
-        <div class="role">Duelist // Guangdong, China</div>
-        <p class="blurb">Rise and fall. A reality-bending duelist joins the roster in Season 26 // Act VI.</p>
+        <span class="tag">It's go time</span>
+        <h1>SLACK</h1>
+        <div class="role">Gappie // Burlington VT</div>
+        <p class="blurb">Checking the weather in Burlington…</p>
       </div>
       <div class="cards">
         <button class="card" data-act="sound" type="button"><small>Agent trailer</small><b>Rise and fall</b><div class="snd">🔇 Sound off</div></button>
@@ -896,10 +896,43 @@
     });
     document.body.appendChild(homeEl);
     placeHome();
+    const blurb = homeEl.querySelector(".blurb");
+    burlingtonWeather().then(
+      (text) => (blurb.textContent = text),
+      () => (blurb.textContent = "Couldn't get Burlington's weather right now."),
+    );
     homeOpen = true;
     homeRoute = location.pathname;
     dashEl?.querySelector("button")?.classList.add("p-tab_rail__button--active");
     document.body.classList.add("sdd-dash-open");
+  }
+
+  // today's weather in burlington, vt from open-meteo (free, no key; only the city's
+  // coordinates are sent). kept for 15 minutes so reopening dash doesn't refetch.
+  const WEATHER = {
+    0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "cloudy", 45: "foggy", 48: "foggy",
+    51: "light drizzle", 53: "drizzle", 55: "heavy drizzle", 56: "freezing drizzle", 57: "freezing drizzle",
+    61: "light rain", 63: "rain", 65: "heavy rain", 66: "freezing rain", 67: "freezing rain",
+    71: "light snow", 73: "snow", 75: "heavy snow", 77: "snow grains",
+    80: "rain showers", 81: "rain showers", 82: "heavy rain showers", 85: "snow showers", 86: "heavy snow showers",
+    95: "thunderstorms", 96: "thunderstorms with hail", 99: "thunderstorms with hail",
+  };
+  let weatherCache = null;
+  async function burlingtonWeather() {
+    if (weatherCache && Date.now() - weatherCache.at < 15 * 60 * 1000) return weatherCache.text;
+    const url =
+      "https://api.open-meteo.com/v1/forecast?latitude=44.4759&longitude=-73.2121" +
+      "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code" +
+      "&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=1";
+    const j = await (await fetch(url)).json();
+    const now = Math.round(j.current.temperature_2m);
+    const hi = Math.round(j.daily.temperature_2m_max[0]);
+    const lo = Math.round(j.daily.temperature_2m_min[0]);
+    const sky = WEATHER[j.current.weather_code] ?? "mixed";
+    const day = WEATHER[j.daily.weather_code[0]] ?? "mixed";
+    const text = `${now}°F and ${sky} in Burlington right now. Today: ${day}, high of ${hi}°, low of ${lo}°.`;
+    weatherCache = { at: Date.now(), text };
+    return text;
   }
 
   // the workspaces you're signed into, one per name (an org and its workspace share one)
