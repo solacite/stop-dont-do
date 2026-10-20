@@ -3,7 +3,11 @@
 a mod for the slack desktop app.
 
 - **sidebar sections:** a panel that lists every sidebar section with its channels under it. untick a section or a channel and it's gone from your sidebar. tick it to bring it back.
-- **themes:** slack, google docs, paper, midnight and terminal. google docs makes slack look like a google doc: white page, arial everywhere, an "untitled document" header and the docs toolbar.
+- **groups:** sections whose names start with dashes (like `── .✦ events`) become groups, holding every section below them until the next one. tick or untick a whole group at once, or click the divider in your sidebar to fold the group away.
+- **no fake bold:** if the only unread channels in a section are ones you hid, the section name isn't bold anymore.
+- **themes:** slack, google docs, valorant, paper, midnight and terminal. every theme's colours can be changed (background, sidebar, text, accent). valorant has agent presets.
+  - google docs: white everywhere, arial, google blue for links and the selected channel.
+  - valorant: dark navy and red, bahnschrift, uppercase labels, sharp corners and clipped edges.
 
 open the panel with the **sidebar** button in the left rail (under more), or ctrl+alt+h.
 
@@ -29,6 +33,7 @@ then open slack from "Slack (stop dont do)" instead of the normal slack icon.
 
 - `launch.mjs` starts slack with `--remote-debugging-port=9333` (bound to 127.0.0.1) and uses the chrome devtools protocol to add the script to every slack page. nothing in slack's install folder is touched, so slack updates don't break it.
 - `src/inject.js` runs inside slack. it reads your sections from slack's own api (`users.channelSections.list`) and hides rows in the sidebar. slack's sidebar is a virtual list with absolutely positioned rows, so the script also shifts the visible rows up to close the gaps. hiding a section collapses it in slack first so the list stays short.
+- the bold fix asks slack's `client.counts` which channels are unread, at most every 15 seconds.
 - settings live in slack's localStorage under `sdd:settings`, per computer.
 
 ## notes
