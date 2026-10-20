@@ -645,7 +645,7 @@
 
     /* the valorant-style home page (dash) */
     #sdd-home {
-      position: fixed; z-index: 50; overflow: hidden; background: #0f1923; color: #ece8e1;
+      position: fixed; z-index: 9000; overflow: hidden; background: #0f1923; color: #ece8e1;
       font-family: Bahnschrift, "DIN Next", "Arial Narrow", sans-serif;
     }
     #sdd-home iframe {
@@ -672,15 +672,17 @@
     #sdd-home .nav button:hover { color: #ece8e1; }
     #sdd-home .nav .on { color: #ece8e1; cursor: default; }
     #sdd-home .nav .on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: var(--sdd-acc, #ff4655); }
-    #sdd-home .nav .ws { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-    #sdd-home .nav .ws button {
-      width: 34px; height: 34px; padding: 0; overflow: hidden; border: 2px solid transparent; background: rgba(236,232,225,.12);
-      display: grid; place-items: center; font-weight: 700; letter-spacing: 0;
+    #sdd-home .nav .right { margin-left: auto; display: flex; gap: 26px; align-items: center; }
+    #sdd-home .spaces { position: relative; }
+    #sdd-home .spaces .menu {
+      position: absolute; top: calc(100% + 10px); right: 0; min-width: 220px; padding: 6px 0; z-index: 2;
+      background: rgba(15,25,35,.96); border: 1px solid rgba(236,232,225,.15); letter-spacing: .08em;
     }
-    #sdd-home .nav .ws button img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    #sdd-home .nav .ws button.on { border-color: var(--sdd-acc, #ff4655); }
-    #sdd-home .nav .ws button.on::after { display: none; }
-    #sdd-home .nav .ws button:hover { border-color: rgba(236,232,225,.6); }
+    #sdd-home .spaces .menu[hidden] { display: none; }
+    #sdd-home .spaces .menu button { display: block; width: 100%; text-align: left; padding: 9px 16px; color: rgba(236,232,225,.75); }
+    #sdd-home .spaces .menu button:hover { color: #ece8e1; background: rgba(236,232,225,.08); }
+    #sdd-home .spaces .menu button.on { color: #ece8e1; box-shadow: inset 3px 0 0 var(--sdd-acc, #ff4655); cursor: default; }
+    #sdd-home .spaces .menu button.on::after { display: none; }
     #sdd-home .play {
       position: absolute; top: 12px; right: 32px; padding: 10px 56px; border: 0; cursor: pointer;
       background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff); font: 700 22px/1 Bahnschrift, sans-serif; letter-spacing: .2em; text-transform: uppercase;
@@ -834,15 +836,13 @@
   let homeEl = null;
   let muted = true;
 
-  // covers everything right of the rail and under the top bar
+  // covers everything under the top bar, left rail included
   function placeHome() {
     if (!homeEl) return;
     const ws = document.querySelector(".p-client_workspace_wrapper")?.getBoundingClientRect();
     if (!ws) return;
-    const side = document.querySelector(".p-view_contents--sidebar")?.getBoundingClientRect();
-    const rail = document.querySelector(".p-tab_rail__tab_menu")?.getBoundingClientRect();
-    const left = side?.width ? side.left : (rail?.right ?? ws.left) + 8;
-    const top = side?.height ? side.top : ws.top;
+    const left = 0;
+    const top = ws.top;
     const width = ws.right - left;
     const height = ws.bottom - top;
     Object.assign(homeEl.style, { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` });
@@ -864,7 +864,13 @@
         <button type="button" data-tab="tab_rail_activity_button">Activity</button>
         <button type="button" data-tab="tab_rail_later_button">To-dos</button>
         <button type="button" data-act="panel">Sidebar</button>
-        <div class="ws">${workspaceButtons()}</div>
+        <div class="right">
+          <div class="spaces">
+            <button type="button" data-act="spaces" aria-haspopup="menu">Spaces ▾</button>
+            <div class="menu" role="menu" hidden>${workspaceItems()}</div>
+          </div>
+          <button type="button" data-act="profile">Profile</button>
+        </div>
       </div>
       <button class="play" type="button" title="Back to Slack">Play</button>
       <div class="hero">
@@ -878,6 +884,10 @@
         <button class="card" data-act="back" type="button"><small>Season 26 // Act VI</small><b>Back to Slack</b></button>
       </div>
     </section>`);
+    const spacesMenu = homeEl.querySelector(".spaces .menu");
+    homeEl.addEventListener("click", (e) => {
+      if (!e.target.closest(".spaces")) spacesMenu.hidden = true;
+    });
     homeEl.querySelector(".nav").addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -885,7 +895,12 @@
         closeHome();
         document.querySelector(`[data-qa="${b.dataset.tab}"]`)?.click();
       } else if (b.dataset.act === "panel") togglePanel();
-      else if (b.dataset.team) switchWorkspace(b.dataset.team);
+      else if (b.dataset.act === "spaces") spacesMenu.hidden = !spacesMenu.hidden;
+      else if (b.dataset.act === "profile") {
+        // slack's profile menu hangs off the avatar in the rail, so bring the rail back first
+        closeHome();
+        document.querySelector('[data-qa="user-button"]')?.click();
+      } else if (b.dataset.team) switchWorkspace(b.dataset.team);
     });
     homeEl.querySelector(".play").addEventListener("click", closeHome);
     homeEl.querySelector('[data-act="back"]').addEventListener("click", closeHome);
@@ -950,14 +965,10 @@
     return [...byName.values()];
   }
 
-  function workspaceButtons() {
+  function workspaceItems() {
     const current = location.pathname.split("/")[2];
     return workspaceList()
-      .map((t) => {
-        const icon = typeof t.icon === "string" ? t.icon : t.icon?.image_88 || t.icon?.image_68 || t.icon?.image_44;
-        const face = icon ? `<img src="${esc(icon)}" alt="">` : esc(t.name.slice(0, 1).toUpperCase());
-        return `<button type="button" class="${t.id === current ? "on" : ""}" data-team="${esc(t.id)}" title="${esc(t.name)}">${face}</button>`;
-      })
+      .map((t) => `<button type="button" role="menuitem" class="${t.id === current ? "on" : ""}" data-team="${esc(t.id)}">${esc(t.name)}</button>`)
       .join("");
   }
 
