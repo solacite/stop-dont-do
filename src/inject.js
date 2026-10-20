@@ -643,6 +643,31 @@
     body.sdd-dash-open .p-tab_rail__tab_menu > :not(#sdd-dash-holder) .p-tab_rail__button--active { opacity: .55; }
     body.sdd-dash-open .p-tab_rail__tab_menu > :not(#sdd-dash-holder) .p-tab_rail__button--active .p-tab_rail__button__label { color: inherit !important; }
 
+    /* dash mode: slack sits on frosted glass over the dash video */
+    body.sdd-dashmode [data-sdd-rail], body.sdd-dashmode .p-control_strip { display: none !important; }
+    /* the wrapper is a grid with a fixed column for the rail; give that space back */
+    body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
+    body.sdd-dashmode .p-view_contents--sidebar:has(.p-channel_sidebar__list) { display: none !important; }
+    body.sdd-dashmode .p-client_workspace_wrapper {
+      margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
+    }
+    body.sdd-dashmode.sdd-dash-open .p-client_workspace_wrapper { visibility: hidden; }
+    body.sdd-dashmode .p-client_workspace_wrapper, body.sdd-dashmode .p-client_workspace_wrapper * {
+      --dt_color-base-pry: transparent !important; --dt_color-base-sec: transparent !important; --dt_color-base-ter: transparent !important;
+      --dt_color-theme-base-pry: transparent !important; --dt_color-theme-base-sec: transparent !important;
+      --dt_color-theme-surf-inv-sec: transparent !important; --dt_color-ctr-pry: transparent !important;
+    }
+    body.sdd-dashmode .p-client_workspace_wrapper :is(.p-client_workspace, .p-client_workspace__layout, .p-view_header,
+      .p-view_header--primary-background, .c-scrollbar__hider, .p-message_pane, .p-workspace__primary_view) { background: transparent !important; }
+    body.sdd-dashmode .p-client_workspace_wrapper :is(.p-view_contents--primary, .p-view_contents--sidebar, .p-view_contents--secondary) {
+      background: rgba(15, 25, 35, .42) !important; backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);
+      border: 1px solid rgba(236, 232, 225, .12) !important;
+    }
+    body.sdd-dashmode .p-client_workspace_wrapper .c-wysiwyg_container { background: rgba(15, 25, 35, .55) !important; }
+    #sdd-home.bg { z-index: 9000; pointer-events: none; }
+    #sdd-home.bg .nav { pointer-events: auto; }
+    #sdd-home.bg :is(.hero, .cards, .play) { display: none; }
+
     /* the valorant-style home page (dash) */
     #sdd-home {
       position: fixed; z-index: 9000; overflow: hidden; background: #0f1923; color: #ece8e1;
@@ -840,6 +865,8 @@
   delete settings.video;
 
   const homeEnabled = () => settings.theme === "valorant" && settings.home;
+  // dash mode: no rail or channel list; slack runs inside the dash, over the video
+  const dashMode = () => homeEnabled() && !!settings.dashMode;
   const DASH_ICON = `<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M3 4l5.5 12h3L17 4h-3.6L10 11.6 6.6 4z"/></svg>`;
 
   let dashEl = null;
@@ -852,9 +879,8 @@
     if (dashEl?.isConnected) return;
     dashEl = cloneRailButton("sdd-dash-holder", "Dash", "Dash", DASH_ICON, () => (homeOpen ? closeHome() : openHome()));
     if (!dashEl) return;
-    // sit between slack's "more" and our "sidebar" button
-    const sidebarBtn = document.getElementById("sdd-rail-holder");
-    if (sidebarBtn) sidebarBtn.before(dashEl);
+    // first in the rail, above slack's home
+    document.querySelector(".p-tab_rail__tab_menu")?.prepend(dashEl);
   }
 
   let homeOpen = false;
@@ -867,7 +893,7 @@
     const ws = document.querySelector(".p-client_workspace_wrapper")?.getBoundingClientRect();
     if (!ws) return;
     const left = 0;
-    const top = ws.top;
+    const top = document.querySelector(".p-ia4_top_nav")?.getBoundingClientRect().bottom ?? ws.top;
     const width = ws.right - left;
     const height = ws.bottom - top;
     Object.assign(homeEl.style, { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` });
@@ -881,6 +907,8 @@
     // still playing from last time: just show it again
     if (homeEl && homeEl.dataset.src === vid.src) {
       Object.assign(homeEl.style, { visibility: "", pointerEvents: "" });
+      homeEl.classList.remove("bg");
+      markNav();
       placeHome();
       homeOpen = true;
       homeRoute = location.pathname;
@@ -899,7 +927,7 @@
       ${media}
       <div class="shade"></div>
       <div class="nav">
-        <button type="button" class="on">Dash</button>
+        <button type="button" class="on" data-act="dash">Dash</button>
         <button type="button" data-tab="tab_rail_home_button">Home</button>
         <button type="button" data-tab="tab_rail_dms_button">DMs</button>
         <button type="button" data-tab="tab_rail_activity_button">Activity</button>
@@ -932,9 +960,12 @@
     homeEl.querySelector(".nav").addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
-      if (b.dataset.tab) {
+      if (b.dataset.act === "dash") {
+        if (!homeOpen) openHome();
+      } else if (b.dataset.tab) {
         closeHome();
         document.querySelector(`[data-qa="${b.dataset.tab}"]`)?.click();
+        setTimeout(markNav, 300);
       } else if (b.dataset.act === "panel") togglePanel();
       else if (b.dataset.act === "spaces") spacesMenu.hidden = !spacesMenu.hidden;
       else if (b.dataset.act === "profile") {
@@ -1033,9 +1064,12 @@
 
   let homeRoute = null;
   // leaving dash only hides it, so the video (and sound) keeps going in the background
+  // in dash mode it drops behind slack instead, as the background with the top bar
   function closeHome() {
-    if (homeEl) Object.assign(homeEl.style, { visibility: "hidden", pointerEvents: "none" });
+    if (homeEl && dashMode()) homeEl.classList.add("bg");
+    else if (homeEl) Object.assign(homeEl.style, { visibility: "hidden", pointerEvents: "none" });
     homeOpen = false;
+    markNav();
     dashEl?.querySelector("button")?.classList.remove("p-tab_rail__button--active");
     document.body.classList.remove("sdd-dash-open");
   }
@@ -1045,6 +1079,23 @@
     closeHome();
     homeEl?.remove();
     homeEl = null;
+  }
+
+  // underline whichever tab you're on in the dash top bar
+  function markNav() {
+    if (!homeEl) return;
+    const active = document.querySelector(".p-tab_rail__button--active[data-qa]")?.getAttribute("data-qa");
+    for (const b of homeEl.querySelectorAll(".nav > button")) {
+      const on = homeOpen ? b.dataset.act === "dash" : !!active && b.dataset.tab === active;
+      b.classList.toggle("on", on);
+    }
+  }
+
+  // slack's left rail, marked so dash mode can hide it
+  function markRail() {
+    let el = document.querySelector(".p-tab_rail__tab_menu");
+    while (el?.parentElement && el.parentElement.getBoundingClientRect().width < 160 && el.parentElement !== document.body) el = el.parentElement;
+    if (el && !el.hasAttribute("data-sdd-rail")) el.setAttribute("data-sdd-rail", "");
   }
 
   // picking any other rail tab, the search bar or a workspace leaves the dash
@@ -1058,14 +1109,23 @@
   // called on theme changes and every tick: keeps the button and page in step
   function mountFx() {
     mountDash();
+    markRail();
+    document.body.classList.toggle("sdd-dashmode", dashMode());
     if (!homeEnabled()) destroyHome();
+    else if (dashMode() && !homeEl) openHome();
     else if (homeOpen) {
       if (location.pathname !== homeRoute) closeHome();
       else placeHome();
+    } else if (homeEl) {
+      if (!dashMode() && homeEl.classList.contains("bg")) closeHome();
+      placeHome();
+      markNav();
     }
   }
   cleanups.push(() => {
     destroyHome();
+    document.body.classList.remove("sdd-dashmode");
+    document.querySelectorAll("[data-sdd-rail]").forEach((el) => el.removeAttribute("data-sdd-rail"));
     dashEl?.remove();
     document.removeEventListener("click", onLeaveHome, true);
     window.removeEventListener("resize", placeHome);
@@ -1198,19 +1258,33 @@
   // a copy of slack's own "More" rail button, so ours match whatever theme is on.
   // it goes right after "more"; returns null if the rail isn't there.
   function cloneRailButton(id, label, title, icon, onClick) {
-    const more = document.querySelector('[data-qa="tab_rail_browse_button"]');
-    const anchor = more?.closest(".c-coachmark-anchor");
-    if (!more || !anchor) return null;
+    // not every workspace has "more" (cal hacks has "agents & tools" instead), so fall
+    // back to the last of slack's own rail tabs
+    const menu = document.querySelector(".p-tab_rail__tab_menu");
+    if (!menu) return null;
+    const tabs = [...menu.querySelectorAll("button.p-tab_rail__button")].filter((b) => !b.closest("[id^='sdd-']"));
+    const more = document.querySelector('[data-qa="tab_rail_browse_button"]') || tabs.at(-1);
+    if (!more) return null;
+    let anchor = more;
+    while (anchor.parentElement && anchor.parentElement !== menu) anchor = anchor.parentElement;
+    if (anchor.parentElement !== menu) return null;
     const btn = more.cloneNode(true);
     btn.removeAttribute("data-qa");
     btn.removeAttribute("aria-describedby");
     btn.classList.remove("p-tab_rail__button--active");
     btn.setAttribute("aria-label", title);
     btn.title = title;
-    const svg = btn.querySelector("svg");
-    if (svg) svg.outerHTML = icon;
-    const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT);
-    for (let n; (n = walker.nextNode()); ) if (n.nodeValue.trim()) n.nodeValue = label;
+    // drop unread badges and keyboard-shortcut hints copied from the original
+    btn.querySelectorAll("[class*='badge'], [data-qa='tab_rail_shortcut_hint'], [class*='shortcut']").forEach((el) => el.remove());
+    btn.querySelectorAll("[data-qa]").forEach((el) => el.removeAttribute("data-qa"));
+    const svgs = btn.querySelectorAll("svg");
+    svgs.forEach((s, i) => (i ? s.remove() : (s.outerHTML = icon)));
+    const labelEl = btn.querySelector(".p-tab_rail__button__label");
+    if (labelEl) labelEl.textContent = label;
+    else {
+      const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT);
+      for (let n, done = false; (n = walker.nextNode()); ) if (n.nodeValue.trim()) (n.nodeValue = done ? "" : label), (done = true);
+    }
     const holder = document.createElement("div");
     holder.id = id;
     holder.appendChild(btn);
@@ -1224,7 +1298,7 @@
 
   // falls back to a small corner button if the rail isn't there
   function mountRailButton() {
-    if (fabEl?.isConnected && (fabEl.id === "sdd-rail-holder" || !document.querySelector('[data-qa="tab_rail_browse_button"]'))) return;
+    if (fabEl?.isConnected && (fabEl.id === "sdd-rail-holder" || !document.querySelector(".p-tab_rail__tab_menu"))) return;
     fabEl?.remove();
     const holder = cloneRailButton("sdd-rail-holder", "Sidebar", "Sidebar & themes (Ctrl+Alt+H)", EYE_ICON, () => togglePanel());
     if (holder) {
@@ -1384,6 +1458,7 @@
     const video =
       name === "valorant"
         ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Dash button in the left rail</span></label>
+          <label class="ui-item"><input type="checkbox" data-act="dashmode" ${settings.dashMode ? "checked" : ""}><span class="name">Run Slack from Dash (no rail or channel list)</span></label>
           <div class="vid">
             <label for="sdd-dash-video">Dash video</label>
             <div class="vid-row">
@@ -1438,6 +1513,12 @@
     vidInput?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") setVideo();
       e.stopPropagation();
+    });
+    wrap.querySelector('[data-act="dashmode"]')?.addEventListener("change", (e) => {
+      settings.dashMode = e.target.checked;
+      save();
+      mountFx();
+      layoutSidebar();
     });
     wrap.querySelector('[data-act="home"]')?.addEventListener("change", (e) => {
       settings.home = e.target.checked;

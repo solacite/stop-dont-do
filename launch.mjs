@@ -100,6 +100,10 @@ const YT_TWEAK = `(() => {
       const best = (p.getAvailableQualityLevels() || []).find((q) => q !== "auto");
       if (best) { p.setPlaybackQualityRange(best, best); p.setPlaybackQuality?.(best); }
     } catch {}
+    // autoplay sometimes doesn't start on its own; nudge it (muted, so it's allowed)
+    try {
+      if (p.getPlayerState() !== 1) { if (p.isMuted && !p.isMuted()) p.mute(); p.playVideo(); }
+    } catch {}
     if (++tries < 20) setTimeout(tune, 1000);
   };
   tune();
@@ -139,14 +143,22 @@ async function attach(target, { source = readFileSync(INJECT, "utf8"), persist =
 async function main() {
   await ensureSlack();
   const attached = new Map();
+  let misses = 0;
   log("watching slack windows (leave this running)");
   for (;;) {
     let targets = [];
     try {
       targets = await (await fetch(`${BASE}/json/list`)).json();
+      misses = 0;
     } catch {
-      log("slack closed, bye");
-      process.exit(0);
+      // slack can be briefly unreachable (switching workspaces, reloading); only give up
+      // once it's been gone for a while
+      if (++misses * 700 > 30000) {
+        log("slack closed, bye");
+        process.exit(0);
+      }
+      await sleep(700);
+      continue;
     }
     for (const t of targets) {
       if (attached.has(t.id)) continue;
