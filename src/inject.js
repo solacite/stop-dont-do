@@ -874,8 +874,8 @@
       </div>
       <button class="play" type="button" title="Back to Slack">Play</button>
       <div class="hero">
-        <span class="tag">It's go time</span>
-        <h1>SLACK</h1>
+        <span class="tag">It's go time!</span>
+        <h1>OODLIA JU</h1>
         <div class="role">Gappie // Burlington VT</div>
         <p class="blurb">Checking the weather in Burlington…</p>
       </div>
