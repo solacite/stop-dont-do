@@ -814,8 +814,6 @@
     #sdd-panel header { padding: 16px 18px 10px; display: flex; align-items: center; gap: 8px; }
     #sdd-panel header h2 { margin: 0; font-size: 17px; font-weight: 700; flex: 1; color: var(--fg); }
     #sdd-panel button { font: inherit; color: inherit; cursor: pointer; }
-    #sdd-panel .x { background: none; border: 0; font-size: 20px; color: var(--fg2); padding: 2px 6px; border-radius: 6px; }
-    #sdd-panel .x:hover { background: var(--hov); }
     #sdd-panel .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--fg2); padding: 6px 18px; }
     #sdd-panel .themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 2px 18px 10px; }
     #sdd-panel .theme { border: 2px solid var(--line); background: var(--bg2); border-radius: 10px; padding: 8px; text-align: left; font-size: 12px; color: var(--fg); }
@@ -939,7 +937,7 @@
     mountRailButton();
 
     panelEl = h(`<aside id="sdd-panel" aria-label="stop dont do">
-      <header><h2>Sidebar & themes</h2><button class="x" title="Close (Esc)">×</button></header>
+      <header><h2>Sidebar & themes</h2></header>
       <div class="label">Theme</div>
       <div class="themes"></div>
       <div class="colors"></div>
@@ -958,7 +956,6 @@
     </aside>`);
     document.body.appendChild(panelEl);
 
-    panelEl.querySelector(".x").addEventListener("click", () => togglePanel(false));
     panelEl.querySelector("input[type=search]").addEventListener("input", (e) => {
       query = e.target.value.trim().toLowerCase();
       renderList();
@@ -1216,6 +1213,9 @@
   function togglePanel(force) {
     const open = force ?? !panelEl.classList.contains("open");
     panelEl.classList.toggle("open", open);
+    // the rail button shows as active while the panel is open, since it's also how you close it
+    fabEl?.querySelector("button")?.classList.toggle("p-tab_rail__button--active", open);
+    fabEl?.toggleAttribute("data-open", open);
     if (open) {
       stylePanel();
       refreshList(false);
