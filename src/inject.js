@@ -407,11 +407,28 @@
         list.dataset.sddH = v;
         list.dataset.sddOrigH = fullHeight;
       }
+      updateScrollbar(list);
     } finally {
       sidebarObserver.takeRecords();
       applying = false;
     }
   }
+
+  // slack sizes its scrollbar from the full list, so it still shows one after we've
+  // hidden enough rows that everything fits. drop it when there's nothing to scroll.
+  function updateScrollbar(list = observedList) {
+    const root = list?.closest(".c-virtual_list--scrollbar");
+    const scroller = list?.closest(".c-scrollbar__hider");
+    if (!root || !scroller) return;
+    const fits = scroller.scrollHeight <= scroller.clientHeight + 1;
+    if (fits !== root.hasAttribute("data-sdd-noscroll")) root.toggleAttribute("data-sdd-noscroll", fits);
+  }
+  const onResize = () => updateScrollbar();
+  window.addEventListener("resize", onResize);
+  cleanups.push(() => {
+    window.removeEventListener("resize", onResize);
+    document.querySelectorAll("[data-sdd-noscroll]").forEach((el) => el.removeAttribute("data-sdd-noscroll"));
+  });
 
   let frame = 0;
   const scheduleLayout = () => {
@@ -768,6 +785,7 @@
 
   const PANEL_CSS = `
     [data-sdd-hide] { display: none !important; }
+    [data-sdd-noscroll] .c-scrollbar__track, [data-sdd-noscroll] .c-scrollbar__bar { display: none !important; }
     [data-sdd-quiet] .p-channel_sidebar__section_heading,
     [data-sdd-quiet] .p-channel_sidebar__section_heading *,
     [data-sdd-quiet] [class*="sectionHeadingLabelUnreads"],
