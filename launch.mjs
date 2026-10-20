@@ -111,6 +111,52 @@ const YT_TWEAK = `(() => {
   tune();
 })();`;
 
+// run an expression inside another frame (the spotify player) and return its value
+async function evalInFrame(match, expression) {
+  const t = (await (await fetch(`${BASE}/json/list`)).json()).find((t) => t.type === "iframe" && t.url.includes(match));
+  if (!t) return null;
+  const ws = new WebSocket(t.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    ws.onopen = resolve;
+    ws.onerror = () => reject(new Error("websocket failed"));
+  });
+  const value = await new Promise((resolve) => {
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.id === 1) resolve(m.result?.result?.value ?? null);
+    };
+    ws.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression, returnByValue: true } }));
+  });
+  ws.close();
+  return value;
+}
+
+// the page can't reach into spotify's player itself, so it asks us (window.sddBridge)
+const SPOTIFY_ACTIONS = {
+  next: `document.querySelector('[data-testid="skip-forward"]')?.click(), true`,
+  prev: `document.querySelector('button[aria-label="Previous"]')?.click(), true`,
+  track: `(() => {
+    const row = [...document.querySelectorAll('[data-testid^="tracklist-row-"]')].find((r) => {
+      const b = r.querySelector('[data-testid="playback-indicator"]');
+      return b && !/^play/i.test(b.getAttribute("aria-label") || "");
+    });
+    const parts = row ? [...row.querySelectorAll("h3, h4, p, span, a")].map((e) => e.textContent.trim()).filter(Boolean) : [];
+    return { playlist: document.querySelector('[data-testid="entity-title"]')?.textContent.trim() || "", title: parts[0] || "", artist: parts[1] || "" };
+  })()`,
+};
+async function handleBridge(payload, send) {
+  let msg;
+  try {
+    msg = JSON.parse(payload);
+  } catch {
+    return;
+  }
+  const expr = msg.cmd === "spotify" && SPOTIFY_ACTIONS[msg.action];
+  if (!expr) return;
+  const result = await evalInFrame("open.spotify.com/embed", expr).catch(() => null);
+  await send("Runtime.evaluate", { expression: `window.__sddBridgeReply?.(${JSON.stringify({ id: msg.id, result })})` }).catch(() => {});
+}
+
 // one websocket per slack page; registers the script for future loads and runs it now
 async function attach(target, { source = readFileSync(INJECT, "utf8"), persist = true } = {}) {
   const ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -124,6 +170,7 @@ async function attach(target, { source = readFileSync(INJECT, "utf8"), persist =
     });
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
+    if (msg.method === "Runtime.bindingCalled" && msg.params?.name === "sddBridge") return handleBridge(msg.params.payload, send);
     const p = pending.get(msg.id);
     if (!p) return;
     pending.delete(msg.id);
@@ -135,6 +182,8 @@ async function attach(target, { source = readFileSync(INJECT, "utf8"), persist =
   });
   if (persist) {
     await send("Page.enable");
+    await send("Runtime.enable");
+    await send("Runtime.addBinding", { name: "sddBridge" });
     await send("Page.addScriptToEvaluateOnNewDocument", { source });
   }
   const res = await send("Runtime.evaluate", { expression: source });

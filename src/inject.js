@@ -803,6 +803,9 @@
     #sdd-home .nav .seek::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50% !important; background: #ece8e1; }
     #sdd-home .nav .time { font-size: 12px; min-width: 88px; color: rgba(236,232,225,.7); text-transform: none; }
     #sdd-home .card.now { cursor: default; width: 300px; }
+    /* spotify plays from a hidden player; its embed has no volume, so those controls go */
+    #sdd-home #sdd-spotify { position: absolute; left: -10000px; top: 0; width: 400px; height: 352px; border: 0; }
+    #sdd-home .nav .media.spotify :is([data-media="mute"], .vol) { display: none; }
     #sdd-home .card.now b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #sdd-home .card.now small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* lives on body above everything, so slack's panes (in dash mode) can't cover it */
@@ -1028,6 +1031,8 @@
   function onPlayerMessage(e) {
     // only our dash player; slack's own youtube previews talk on the same channel
     if (!e.source || e.source !== ytFrame()?.contentWindow) return;
+    // with spotify on, the controls follow spotify; the video just plays quietly
+    if (useSpotify()) return;
     let d;
     try {
       d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
@@ -1047,8 +1052,56 @@
   window.addEventListener("message", onPlayerMessage);
   cleanups.push(() => window.removeEventListener("message", onPlayerMessage));
 
+  // ---- spotify instead of the video's sound. its embed player takes play/pause/seek
+  // over postMessage; next/previous song and the song name go through the launcher,
+  // which can reach inside the player (window.sddBridge).
+  function spotifyEmbed(url) {
+    const m = String(url || "").match(/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(playlist|album|track|artist|show|episode)\/([A-Za-z0-9]+)/);
+    return m ? `https://open.spotify.com/embed/${m[1]}/${m[2]}` : null;
+  }
+  const useSpotify = () => !!spotifyEmbed(settings.spotify);
+  const spFrame = () => homeEl?.querySelector("#sdd-spotify");
+  const spCmd = (command, extra = {}) => spFrame()?.contentWindow?.postMessage({ command, ...extra }, "*");
+  let bridgeSeq = 0;
+  const bridgeWaiters = new Map();
+  window.__sddBridgeReply = ({ id, result }) => {
+    bridgeWaiters.get(id)?.(result);
+    bridgeWaiters.delete(id);
+  };
+  function bridge(action) {
+    if (typeof window.sddBridge !== "function") return Promise.resolve(null);
+    const id = ++bridgeSeq;
+    return new Promise((resolve) => {
+      bridgeWaiters.set(id, resolve);
+      window.sddBridge(JSON.stringify({ cmd: "spotify", action, id }));
+      setTimeout(() => bridgeWaiters.has(id) && (bridgeWaiters.delete(id), resolve(null)), 3000);
+    });
+  }
+  async function refreshSpotifyTrack() {
+    const r = await bridge("track");
+    if (!r) return;
+    media.title = r.title || r.playlist || "Spotify";
+    media.author = r.title ? r.artist || r.playlist : "Spotify";
+    renderMedia();
+  }
+  function onSpotifyMessage(e) {
+    if (!e.source || e.source !== spFrame()?.contentWindow) return;
+    const d = typeof e.data === "string" ? (() => { try { return JSON.parse(e.data); } catch { return null; } })() : e.data;
+    if (d?.type === "ready") refreshSpotifyTrack();
+    if (d?.type !== "playback_update" || !d.payload) return;
+    const p = d.payload;
+    const was = media.title;
+    Object.assign(media, { time: (p.position || 0) / 1000, dur: (p.duration || 0) / 1000, playing: !p.isPaused });
+    // a new song started (position jumped back near zero): ask what it is
+    if (media.time < 2 || !was) refreshSpotifyTrack();
+    renderMedia();
+  }
+  window.addEventListener("message", onSpotifyMessage);
+  cleanups.push(() => window.removeEventListener("message", onSpotifyMessage));
+
   function renderMedia() {
     if (!homeEl) return;
+    homeEl.querySelector(".media").classList.toggle("spotify", useSpotify());
     const toggle = homeEl.querySelector('[data-media="toggle"]');
     const mute = homeEl.querySelector('[data-media="mute"]');
     toggle.innerHTML = media.playing ? MEDIA_ICONS.pause : MEDIA_ICONS.play;
@@ -1067,6 +1120,18 @@
   }
 
   function mediaCommand(cmd, arg) {
+    if (useSpotify() && spFrame()) {
+      if (cmd === "toggle") {
+        media.playing = !media.playing;
+        spCmd("toggle");
+      } else if (cmd === "back" || cmd === "fwd") {
+        bridge(cmd === "fwd" ? "next" : "prev").then(() => setTimeout(refreshSpotifyTrack, 800));
+      } else if (cmd === "seek" && media.dur) {
+        media.time = arg * media.dur;
+        spCmd("seek", { timestamp: media.time });
+      }
+      return renderMedia();
+    }
     const v = homeEl?.querySelector("video");
     if (cmd === "toggle") {
       media.playing = !media.playing;
@@ -1147,7 +1212,9 @@
       // keep asking the player to report in until it does
       const iframe = root.querySelector("iframe");
       const ping = () => iframe.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: "sdd", channel: "widget" }), "*");
-      iframe.addEventListener("load", () => [0, 800, 2000, 4000].forEach((t) => setTimeout(ping, t)));
+      // with spotify on, the video stays muted
+      const quiet = () => useSpotify() && iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "mute", args: [] }), "*");
+      iframe.addEventListener("load", () => [0, 800, 2000, 4000].forEach((t) => setTimeout(() => (ping(), quiet()), t)));
     }
     renderMedia();
   }
@@ -1170,7 +1237,7 @@
     if (!homeEnabled()) return;
     const vid = dashVideo();
     // still playing from last time: just show it again
-    if (homeEl && homeEl.dataset.src === vid.src) {
+    if (homeEl && homeEl.dataset.src === vid.src + "|" + (spotifyEmbed(settings.spotify) || "")) {
       Object.assign(homeEl.style, { visibility: "", pointerEvents: "" });
       homeEl.classList.remove("bg");
       markNav();
@@ -1187,9 +1254,14 @@
       vid.kind === "youtube"
         ? `<iframe src="${esc(vid.src)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Dash video"></iframe>`
         : `<video src="${esc(vid.src)}" autoplay muted loop playsinline tabindex="-1"></video>`;
-    Object.assign(media, { time: 0, dur: 0, playing: true, muted: true, title: "", author: "" });
+    Object.assign(media, { time: 0, dur: 0, playing: !useSpotify(), muted: true, title: "", author: "" });
+    const sp = spotifyEmbed(settings.spotify);
+    const spotifyFrame = sp
+      ? `<iframe id="sdd-spotify" src="${esc(sp)}" allow="autoplay; encrypted-media; clipboard-write" tabindex="-1" title="Spotify"></iframe>`
+      : "";
     homeEl = h(`<section id="sdd-home" aria-label="Dash">
       ${media}
+      ${spotifyFrame}
       <div class="shade"></div>
       <div class="nav">
         <button type="button" class="on" data-act="dash">Dash</button>
@@ -1197,17 +1269,17 @@
         <button type="button" data-tab="tab_rail_dms_button">DMs</button>
         <button type="button" data-tab="tab_rail_activity_button">Activity</button>
         <button type="button" data-tab="tab_rail_later_button">To-dos</button>
-        <button type="button" data-act="panel">Sidebar</button>
         <div class="right">
           <div class="media">
-            <button type="button" data-media="back" title="Back 5 seconds">${MEDIA_ICONS.back}</button>
+            <button type="button" data-media="back" title="${useSpotify() ? "Previous song" : "Back 5 seconds"}">${MEDIA_ICONS.back}</button>
             <button type="button" data-media="toggle" title="Pause">${MEDIA_ICONS.pause}</button>
-            <button type="button" data-media="fwd" title="Forward 5 seconds">${MEDIA_ICONS.fwd}</button>
+            <button type="button" data-media="fwd" title="${useSpotify() ? "Next song" : "Forward 5 seconds"}">${MEDIA_ICONS.fwd}</button>
             <input type="range" class="seek" min="0" max="1000" value="0" aria-label="Video position">
             <span class="time">0:00</span>
             <button type="button" data-media="mute" title="Unmute">${MEDIA_ICONS.muted}</button>
             <input type="range" class="vol" min="0" max="100" value="100" aria-label="Volume">
           </div>
+          <button type="button" data-act="panel">Sidebar</button>
           <div class="spaces">
             <button type="button" data-act="spaces" aria-haspopup="menu">Spaces ▾</button>
             <div class="menu" role="menu" hidden>${workspaceItems()}</div>
@@ -1266,7 +1338,7 @@
     homeEl.querySelector(".play").addEventListener("click", closeHome);
     homeEl.querySelector('[data-act="back"]').addEventListener("click", closeHome);
     wireMedia(homeEl, vid);
-    homeEl.dataset.src = vid.src;
+    homeEl.dataset.src = vid.src + "|" + (sp || "");
     document.body.appendChild(homeEl);
     placeHome();
     const blurb = homeEl.querySelector(".blurb");
@@ -1786,6 +1858,14 @@
               <button class="btn" data-act="video-save">Set</button>
             </div>
             <div class="vid-note"></div>
+          </div>
+          <div class="vid">
+            <label for="sdd-spotify-link">Spotify instead of the video's sound</label>
+            <div class="vid-row">
+              <input id="sdd-spotify-link" type="url" placeholder="Spotify playlist, album or song link (blank = off)" value="${esc(settings.spotify || "")}">
+              <button class="btn" data-act="spotify-save">Set</button>
+            </div>
+            <div class="sp-note vid-note"></div>
           </div>`
         : "";
     wrap.innerHTML = `${presets}${video}<div class="picks">${field("bg", "Background")}${field("side", "Sidebar")}${field("fg", "Text")}${field("accent", "Accent")}
@@ -1830,6 +1910,24 @@
       if (wasOpen) openHome();
     };
     wrap.querySelector('[data-act="video-save"]')?.addEventListener("click", setVideo);
+    const spInput = wrap.querySelector("#sdd-spotify-link");
+    const setSpotify = () => {
+      const url = spInput.value.trim();
+      const note = wrap.querySelector(".sp-note");
+      if (url && !spotifyEmbed(url)) return (note.textContent = "That doesn't look like a Spotify playlist, album or song link.");
+      settings.spotify = url || undefined;
+      save();
+      note.textContent = url ? "Set. Press play in the Dash bar; back/forward now skip songs." : "Back to the video's own sound.";
+      const wasOpen = homeOpen;
+      destroyHome();
+      if (wasOpen || dashMode()) openHome();
+      if (!wasOpen && dashMode()) closeHome();
+    };
+    wrap.querySelector('[data-act="spotify-save"]')?.addEventListener("click", setSpotify);
+    spInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") setSpotify();
+      e.stopPropagation();
+    });
     vidInput?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") setVideo();
       e.stopPropagation();
