@@ -241,6 +241,18 @@
       }
     }
     quiet ? el.setAttribute("data-sdd-quiet", "") : el.removeAttribute("data-sdd-quiet");
+    if (quiet) copyReadHeadingStyle();
+  }
+
+  // a quiet heading should look exactly like a read one, so borrow a read one's colour and weight
+  function copyReadHeadingStyle() {
+    const read = [...document.querySelectorAll('.p-channel_sidebar__list [data-qa^="channel_sidebar__section_heading_label"]')].find(
+      (l) => !l.className.includes("Unreads") && !l.closest("[data-sdd-quiet], [data-sdd-hide]"),
+    );
+    if (!read) return;
+    const s = getComputedStyle(read);
+    document.body.style.setProperty("--sdd-read-color", s.color);
+    document.body.style.setProperty("--sdd-read-weight", s.fontWeight);
   }
 
   function markGroupHeading(el, sec) {
@@ -587,8 +599,12 @@
 
   const PANEL_CSS = `
     [data-sdd-hide] { display: none !important; }
-    [data-sdd-quiet] [class*="sectionHeadingLabelUnreads"] { font-weight: inherit !important; color: inherit !important; }
-    [data-sdd-quiet] [class*="sectionHeadingLabelUnreads"] * { font-weight: inherit !important; }
+    [data-sdd-quiet] .p-channel_sidebar__section_heading,
+    [data-sdd-quiet] .p-channel_sidebar__section_heading *,
+    [data-sdd-quiet] [class*="sectionHeadingLabelUnreads"],
+    [data-sdd-quiet] [class*="sectionHeadingLabelUnreads"] * {
+      color: var(--sdd-read-color, inherit) !important; font-weight: var(--sdd-read-weight, inherit) !important;
+    }
     [data-sdd-group] [data-qa^="channel_sidebar__section_heading_label"] { cursor: pointer; }
     [data-sdd-group] [data-qa^="channel_sidebar__section_heading_label"]::after {
       content: "▾"; display: inline-block; margin-left: 6px; opacity: .55; font-size: 11px; transition: transform .15s;
