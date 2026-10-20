@@ -650,8 +650,10 @@
     }
     #sdd-home iframe {
       position: absolute; top: 50%; left: 50%; border: 0; pointer-events: none;
-      width: max(100%, calc(var(--h) * 1.7778)); height: max(100%, calc(var(--w) * .5625));
-      transform: translate(-50%, -50%) scale(1.22); /* crops youtube's title and "more videos" bar */
+      /* cover the page, plus a bit extra so youtube's edges are cropped. the player is really
+         this big (not scaled up), so youtube serves a sharper stream */
+      width: calc(max(var(--w), var(--h) * 1.7778) * 1.15); height: calc(max(var(--h), var(--w) * .5625) * 1.15);
+      transform: translate(-50%, -50%);
     }
     #sdd-home .shade {
       position: absolute; inset: 0; pointer-events: none;
@@ -660,12 +662,25 @@
                   linear-gradient(180deg, rgba(15,25,35,.7), transparent 18%);
     }
     #sdd-home .nav {
-      position: absolute; left: 0; right: 0; top: 0; height: 64px; display: flex; align-items: center; gap: 28px; padding: 0 32px;
+      position: absolute; left: 0; right: 260px; top: 0; height: 64px; display: flex; align-items: center; gap: 26px; padding: 0 32px;
       font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: rgba(236,232,225,.6);
     }
-    #sdd-home .nav span { position: relative; padding: 6px 0; }
-    #sdd-home .nav .on { color: #ece8e1; }
+    #sdd-home .nav button {
+      position: relative; padding: 6px 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit;
+      text-transform: inherit; cursor: pointer;
+    }
+    #sdd-home .nav button:hover { color: #ece8e1; }
+    #sdd-home .nav .on { color: #ece8e1; cursor: default; }
     #sdd-home .nav .on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: var(--sdd-acc, #ff4655); }
+    #sdd-home .nav .ws { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+    #sdd-home .nav .ws button {
+      width: 34px; height: 34px; padding: 0; overflow: hidden; border: 2px solid transparent; background: rgba(236,232,225,.12);
+      display: grid; place-items: center; font-weight: 700; letter-spacing: 0;
+    }
+    #sdd-home .nav .ws button img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #sdd-home .nav .ws button.on { border-color: var(--sdd-acc, #ff4655); }
+    #sdd-home .nav .ws button.on::after { display: none; }
+    #sdd-home .nav .ws button:hover { border-color: rgba(236,232,225,.6); }
     #sdd-home .play {
       position: absolute; top: 12px; right: 32px; padding: 10px 56px; border: 0; cursor: pointer;
       background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff); font: 700 22px/1 Bahnschrift, sans-serif; letter-spacing: .2em; text-transform: uppercase;
@@ -842,11 +857,19 @@
     homeEl = h(`<section id="sdd-home" aria-label="Dash">
       <iframe src="${VIDEO_SRC}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Hush agent trailer"></iframe>
       <div class="shade"></div>
-      <div class="nav"><span class="on">Home</span><span>Agents</span><span>Career</span><span>Collection</span><span>Battlepass</span><span>Store</span></div>
+      <div class="nav">
+        <button type="button" class="on">Dash</button>
+        <button type="button" data-tab="tab_rail_home_button">Home</button>
+        <button type="button" data-tab="tab_rail_dms_button">DMs</button>
+        <button type="button" data-tab="tab_rail_activity_button">Activity</button>
+        <button type="button" data-tab="tab_rail_later_button">To-dos</button>
+        <button type="button" data-act="panel">Sidebar</button>
+        <div class="ws">${workspaceButtons()}</div>
+      </div>
       <button class="play" type="button" title="Back to Slack">Play</button>
       <div class="hero">
-        <span class="tag">New agent</span>
-        <h1>HUSH</h1>
+        <span class="tag">Time to get slackin'</span>
+        <h1>GO TIME</h1>
         <div class="role">Duelist // Guangdong, China</div>
         <p class="blurb">Rise and fall. A reality-bending duelist joins the roster in Season 26 // Act VI.</p>
       </div>
@@ -855,6 +878,15 @@
         <button class="card" data-act="back" type="button"><small>Season 26 // Act VI</small><b>Back to Slack</b></button>
       </div>
     </section>`);
+    homeEl.querySelector(".nav").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.tab) {
+        closeHome();
+        document.querySelector(`[data-qa="${b.dataset.tab}"]`)?.click();
+      } else if (b.dataset.act === "panel") togglePanel();
+      else if (b.dataset.team) switchWorkspace(b.dataset.team);
+    });
     homeEl.querySelector(".play").addEventListener("click", closeHome);
     homeEl.querySelector('[data-act="back"]').addEventListener("click", closeHome);
     homeEl.querySelector('[data-act="sound"]').addEventListener("click", () => {
@@ -868,6 +900,47 @@
     homeRoute = location.pathname;
     dashEl?.querySelector("button")?.classList.add("p-tab_rail__button--active");
     document.body.classList.add("sdd-dash-open");
+  }
+
+  // the workspaces you're signed into, one per name (an org and its workspace share one)
+  function workspaceList() {
+    let teams = {};
+    try {
+      teams = JSON.parse(localStorage.getItem("localConfig_v2") || "{}").teams || {};
+    } catch {}
+    const byName = new Map();
+    for (const t of Object.values(teams)) {
+      if (!t?.id || !t.name) continue;
+      const prev = byName.get(t.name);
+      if (!prev || t.id.startsWith("E")) byName.set(t.name, t);
+    }
+    return [...byName.values()];
+  }
+
+  function workspaceButtons() {
+    const current = location.pathname.split("/")[2];
+    return workspaceList()
+      .map((t) => {
+        const icon = typeof t.icon === "string" ? t.icon : t.icon?.image_88 || t.icon?.image_68 || t.icon?.image_44;
+        const face = icon ? `<img src="${esc(icon)}" alt="">` : esc(t.name.slice(0, 1).toUpperCase());
+        return `<button type="button" class="${t.id === current ? "on" : ""}" data-team="${esc(t.id)}" title="${esc(t.name)}">${face}</button>`;
+      })
+      .join("");
+  }
+
+  // switch through slack's own workspace menu, so it behaves like clicking it yourself
+  async function switchWorkspace(id) {
+    const team = workspaceList().find((t) => t.id === id);
+    if (!team || id === location.pathname.split("/")[2]) return;
+    closeHome();
+    document.querySelector('[data-qa="account_switcher_team_icon"]')?.click();
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      const item = [...document.querySelectorAll('[role="menuitem"], [role="option"]')].find((el) => el.textContent.trim().startsWith(team.name));
+      if (item) return item.click();
+    }
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    location.assign(`/client/${team.id}`);
   }
 
   let homeRoute = null;

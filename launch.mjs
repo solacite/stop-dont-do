@@ -75,8 +75,38 @@ async function ensureSlack() {
   throw new Error("slack started but the debug port never came up");
 }
 
+// runs inside the dash trailer's youtube player: hides its buttons, title and
+// captions, and asks for the best quality the player offers
+const YT_TWEAK = `(() => {
+  const style = document.createElement("style");
+  style.textContent = [
+    ".ytp-chrome-top", ".ytp-chrome-bottom", ".ytp-gradient-top", ".ytp-gradient-bottom", ".ytp-large-play-button",
+    ".ytp-player-controls", ".ytp-pause-overlay", ".ytp-pause-overlay-container", ".ytp-caption-window-container",
+    ".caption-window", ".ytp-cued-thumbnail-overlay", ".ytp-spinner", ".ytp-bezel", ".ytp-bezel-text-wrapper",
+    ".ytp-doubletap-ui-legacy", ".ytp-watermark", ".ytp-youtube-button", ".ytp-title", ".ytp-ce-element",
+    ".ytp-paid-content-overlay", ".ytp-impression-link", ".ytp-endscreen-content", ".ytp-show-cards-title",
+    ".ytp-overflow-overlay", ".ytp-contextmenu", ".ytp-tooltip", ".branding-img"
+  ].join(",") + " { display: none !important; }";
+  document.documentElement.appendChild(style);
+  let tries = 0;
+  const tune = () => {
+    const p = document.getElementById("movie_player");
+    try {
+      p.unloadModule("captions");
+      p.unloadModule("cc");
+      p.setOption("captions", "track", {});
+    } catch {}
+    try {
+      const best = (p.getAvailableQualityLevels() || []).find((q) => q !== "auto");
+      if (best) { p.setPlaybackQualityRange(best, best); p.setPlaybackQuality?.(best); }
+    } catch {}
+    if (++tries < 20) setTimeout(tune, 1000);
+  };
+  tune();
+})();`;
+
 // one websocket per slack page; registers the script for future loads and runs it now
-async function attach(target) {
+async function attach(target, { source = readFileSync(INJECT, "utf8"), persist = true } = {}) {
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   let id = 0;
   const pending = new Map();
@@ -97,9 +127,10 @@ async function attach(target) {
     ws.onopen = resolve;
     ws.onerror = () => reject(new Error("websocket failed"));
   });
-  const source = readFileSync(INJECT, "utf8");
-  await send("Page.enable");
-  await send("Page.addScriptToEvaluateOnNewDocument", { source });
+  if (persist) {
+    await send("Page.enable");
+    await send("Page.addScriptToEvaluateOnNewDocument", { source });
+  }
   const res = await send("Runtime.evaluate", { expression: source });
   if (res.exceptionDetails) log("inject error:", res.exceptionDetails.exception?.description || res.exceptionDetails.text);
   return ws;
@@ -118,7 +149,16 @@ async function main() {
       process.exit(0);
     }
     for (const t of targets) {
-      if (t.type !== "page" || !t.url.startsWith("https://app.slack.com/") || attached.has(t.id)) continue;
+      if (attached.has(t.id)) continue;
+      // the dash trailer: tidy the player once, then let go
+      if (t.type === "iframe" && t.url.includes("youtube-nocookie.com/embed/")) {
+        attached.set(t.id, null);
+        attach(t, { source: YT_TWEAK, persist: false })
+          .then((ws) => ws.close())
+          .catch(() => attached.delete(t.id));
+        continue;
+      }
+      if (t.type !== "page" || !t.url.startsWith("https://app.slack.com/")) continue;
       attached.set(t.id, null);
       attach(t)
         .then((ws) => {
@@ -131,7 +171,7 @@ async function main() {
           log("couldn't attach:", e.message);
         });
     }
-    await sleep(2000);
+    await sleep(700);
   }
 }
 
