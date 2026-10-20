@@ -1216,7 +1216,8 @@
       // copy slack's unread count (or unread dot) from the matching rail tab
       const rail = tab && document.querySelector(`[data-qa="${tab}"]`);
       const badge = rail?.querySelector(".c-badge, .p-unread_dot");
-      const value = badge ? badge.textContent.trim() || "•" : null;
+      // only real counts; slack's plain unread dot (on home/channels) is left out
+      const value = badge?.textContent.trim() || null;
       if (value === null) b.removeAttribute("data-badge");
       else if (b.getAttribute("data-badge") !== value) b.setAttribute("data-badge", value);
     }
