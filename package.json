@@ -1,0 +1,13 @@
+{
+  "name": "stop-dont-do",
+  "version": "0.1.0",
+  "private": true,
+  "description": "hide slack sidebar sections and channels, and theme slack (including as google docs)",
+  "type": "module",
+  "scripts": {
+    "start": "node launch.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

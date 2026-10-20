@@ -1,0 +1,38 @@
+# stop dont do
+
+a mod for the slack desktop app.
+
+- **sidebar sections:** a panel that lists every sidebar section with its channels under it. untick a section or a channel and it's gone from your sidebar. tick it to bring it back.
+- **themes:** slack, google docs, paper, midnight and terminal. google docs makes slack look like a google doc: white page, arial everywhere, an "untitled document" header and the docs toolbar.
+
+open the panel with the **sidebar** button in the left rail (under more), or ctrl+alt+h.
+
+## running it
+
+needs node 22 or newer.
+
+```
+node launch.mjs
+```
+
+this restarts slack with a local debug port, injects `src/inject.js` into it, and stays running so reloads and new windows get the mod too. close slack and the launcher exits.
+
+on windows you can get a start menu and desktop shortcut that does this without a console window:
+
+```
+powershell -ExecutionPolicy Bypass -File install-shortcut.ps1
+```
+
+then open slack from "Slack (stop dont do)" instead of the normal slack icon.
+
+## how it works
+
+- `launch.mjs` starts slack with `--remote-debugging-port=9333` (bound to 127.0.0.1) and uses the chrome devtools protocol to add the script to every slack page. nothing in slack's install folder is touched, so slack updates don't break it.
+- `src/inject.js` runs inside slack. it reads your sections from slack's own api (`users.channelSections.list`) and hides rows in the sidebar. slack's sidebar is a virtual list with absolutely positioned rows, so the script also shifts the visible rows up to close the gaps. hiding a section collapses it in slack first so the list stays short.
+- settings live in slack's localStorage under `sdd:settings`, per computer.
+
+## notes
+
+- while the launcher is running, other programs on your computer could connect to the debug port and control slack. stop the launcher / restart slack normally to close it.
+- set `SDD_PORT` to use a different port, or `SLACK_PATH` if slack isn't found.
+- slack can rename its css classes at any time. if the sidebar stops hiding things, that's probably why.
