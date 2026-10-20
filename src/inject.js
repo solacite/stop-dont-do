@@ -648,6 +648,8 @@
     /* the wrapper is a grid with a fixed column for the rail; give that space back */
     body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
     body.sdd-dashmode .p-view_contents--sidebar:has(.p-channel_sidebar__list) { display: none !important; }
+    /* home's grid still reserves the channel list's column, so hand it to the channel view */
+    body.sdd-dashmode .p-client_workspace__tabpanel:has(.p-channel_sidebar__list) { grid-template-columns: 0 1fr !important; }
     body.sdd-dashmode .p-client_workspace_wrapper {
       margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
     }
