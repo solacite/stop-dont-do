@@ -654,6 +654,11 @@
       margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
     }
     body.sdd-dashmode.sdd-dash-open .p-client_workspace_wrapper { visibility: hidden; }
+    /* slack's menus, pop-ups and the emoji picker open on body; keep them above the raised panes */
+    body.sdd-dashmode :is(.ReactModal__Overlay, .c-popover, .c-tooltip, .ReactModalPortal > div) { z-index: 9400 !important; }
+    /* the channels tab: bring the channel list back as a sidebar until you pick one */
+    body.sdd-dashmode.sdd-drawer .p-view_contents--sidebar:has(.p-channel_sidebar__list) { display: flex !important; }
+    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel:has(.p-channel_sidebar__list) { grid-template-columns: 300px 1fr !important; }
     body.sdd-dashmode .p-client_workspace_wrapper, body.sdd-dashmode .p-client_workspace_wrapper * {
       --dt_color-base-pry: transparent !important; --dt_color-base-sec: transparent !important; --dt_color-base-ter: transparent !important;
       --dt_color-theme-base-pry: transparent !important; --dt_color-theme-base-sec: transparent !important;
@@ -702,15 +707,19 @@
     #sdd-home .nav .on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: var(--sdd-acc, #ff4655); }
     #sdd-home .nav .right { margin-left: auto; display: flex; gap: 26px; align-items: center; }
     #sdd-home .spaces { position: relative; }
-    #sdd-home .spaces .menu {
-      position: absolute; top: calc(100% + 10px); right: 0; min-width: 220px; padding: 6px 0; z-index: 2;
+    /* lives on body above everything, so slack's panes (in dash mode) can't cover it */
+    #sdd-spaces-menu {
+      position: fixed; z-index: 9500; min-width: 220px; padding: 6px 0;
       background: rgba(15,25,35,.96); border: 1px solid rgba(236,232,225,.15); letter-spacing: .08em;
+      font: 14px Bahnschrift, "DIN Next", sans-serif; text-transform: uppercase;
     }
-    #sdd-home .spaces .menu[hidden] { display: none; }
-    #sdd-home .spaces .menu button { display: block; width: 100%; text-align: left; padding: 9px 16px; color: rgba(236,232,225,.75); }
-    #sdd-home .spaces .menu button:hover { color: #ece8e1; background: rgba(236,232,225,.08); }
-    #sdd-home .spaces .menu button.on { color: #ece8e1; box-shadow: inset 3px 0 0 var(--sdd-acc, #ff4655); cursor: default; }
-    #sdd-home .spaces .menu button.on::after { display: none; }
+    #sdd-spaces-menu[hidden] { display: none; }
+    #sdd-spaces-menu button {
+      display: block; width: 100%; text-align: left; padding: 9px 16px; border: 0; background: none; cursor: pointer;
+      color: rgba(236,232,225,.75); font: inherit; letter-spacing: inherit; text-transform: inherit;
+    }
+    #sdd-spaces-menu button:hover { color: #ece8e1; background: rgba(236,232,225,.08); }
+    #sdd-spaces-menu button.on { color: #ece8e1; box-shadow: inset 3px 0 0 var(--sdd-acc, #ff4655); cursor: default; }
     #sdd-home .play {
       position: absolute; top: 12px; right: 32px; padding: 10px 56px; border: 0; cursor: pointer;
       background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff); font: 700 22px/1 Bahnschrift, sans-serif; letter-spacing: .2em; text-transform: uppercase;
@@ -931,6 +940,7 @@
       <div class="nav">
         <button type="button" class="on" data-act="dash">Dash</button>
         <button type="button" data-tab="tab_rail_home_button">Home</button>
+        <button type="button" data-act="channels">Channels</button>
         <button type="button" data-tab="tab_rail_dms_button">DMs</button>
         <button type="button" data-tab="tab_rail_activity_button">Activity</button>
         <button type="button" data-tab="tab_rail_later_button">To-dos</button>
@@ -955,10 +965,24 @@
         <button class="card" data-act="back" type="button"><small>Season 26 // Act VI</small><b>Back to Slack</b></button>
       </div>
     </section>`);
+    // the spaces menu moves to body so it sits above slack's panes in dash mode
+    document.getElementById("sdd-spaces-menu")?.remove();
     const spacesMenu = homeEl.querySelector(".spaces .menu");
-    homeEl.addEventListener("click", (e) => {
-      if (!e.target.closest(".spaces")) spacesMenu.hidden = true;
+    spacesMenu.id = "sdd-spaces-menu";
+    document.body.appendChild(spacesMenu);
+    spacesMenu.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-team]");
+      spacesMenu.hidden = true;
+      if (b) switchWorkspace(b.dataset.team);
     });
+    const toggleSpaces = (btn) => {
+      if (!spacesMenu.hidden) return (spacesMenu.hidden = true);
+      spacesMenu.innerHTML = workspaceItems();
+      const r = btn.getBoundingClientRect();
+      Object.assign(spacesMenu.style, { top: `${r.bottom + 10}px`, right: `${innerWidth - r.right}px` });
+      spacesMenu.hidden = false;
+    };
+
     homeEl.querySelector(".nav").addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -968,8 +992,9 @@
         closeHome();
         document.querySelector(`[data-qa="${b.dataset.tab}"]`)?.click();
         setTimeout(markNav, 300);
-      } else if (b.dataset.act === "panel") togglePanel();
-      else if (b.dataset.act === "spaces") spacesMenu.hidden = !spacesMenu.hidden;
+      } else if (b.dataset.act === "channels") toggleDrawer();
+      else if (b.dataset.act === "panel") togglePanel();
+      else if (b.dataset.act === "spaces") toggleSpaces(b);
       else if (b.dataset.act === "profile") {
         // slack's profile menu hangs off the avatar in the rail, so bring the rail back first
         closeHome();
@@ -1049,18 +1074,11 @@
       .join("");
   }
 
-  // switch through slack's own workspace menu, so it behaves like clicking it yourself
-  async function switchWorkspace(id) {
+  // go straight to the workspace's address. slack's own switcher menu hangs off the
+  // workspace icon in the rail, which dash mode hides, so it opens invisibly.
+  function switchWorkspace(id) {
     const team = workspaceList().find((t) => t.id === id);
     if (!team || id === location.pathname.split("/")[2]) return;
-    closeHome();
-    document.querySelector('[data-qa="account_switcher_team_icon"]')?.click();
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 50));
-      const item = [...document.querySelectorAll('[role="menuitem"], [role="option"]')].find((el) => el.textContent.trim().startsWith(team.name));
-      if (item) return item.click();
-    }
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     location.assign(`/client/${team.id}`);
   }
 
@@ -1079,16 +1097,42 @@
   // actually stops the video: theme changes, dash turned off, or a new video link
   function destroyHome() {
     closeHome();
+    document.getElementById("sdd-spaces-menu")?.remove();
     homeEl?.remove();
     homeEl = null;
   }
+
+  // dash mode's channels tab: home, with the channel list shown again until you pick one
+  function toggleDrawer(force) {
+    const open = force ?? !document.body.classList.contains("sdd-drawer");
+    if (open) {
+      closeHome();
+      document.querySelector('[data-qa="tab_rail_home_button"]')?.click();
+    }
+    document.body.classList.toggle("sdd-drawer", open);
+    setTimeout(() => {
+      layoutSidebar();
+      markNav();
+    }, 200);
+  }
+  function onDrawerPick(e) {
+    if (!document.body.classList.contains("sdd-drawer")) return;
+    if (e.target.closest("#sdd-home .nav button:not([data-act='channels'])")) return toggleDrawer(false);
+    if (e.target.closest(".p-channel_sidebar__list [data-qa-channel-sidebar-channel-id]")) setTimeout(() => toggleDrawer(false), 150);
+  }
+  document.addEventListener("click", onDrawerPick, true);
+  cleanups.push(() => {
+    document.removeEventListener("click", onDrawerPick, true);
+    document.body.classList.remove("sdd-drawer");
+  });
 
   // underline whichever tab you're on in the dash top bar
   function markNav() {
     if (!homeEl) return;
     const active = document.querySelector(".p-tab_rail__button--active[data-qa]")?.getAttribute("data-qa");
     for (const b of homeEl.querySelectorAll(".nav > button")) {
-      const on = homeOpen ? b.dataset.act === "dash" : !!active && b.dataset.tab === active;
+      const drawer = document.body.classList.contains("sdd-drawer");
+      const on = homeOpen ? b.dataset.act === "dash" : drawer ? b.dataset.act === "channels" : !!active && b.dataset.tab === active;
       b.classList.toggle("on", on);
     }
   }
@@ -1106,6 +1150,12 @@
     if (e.target.closest(".p-tab_rail__tab_menu, .p-ia4_top_nav, [data-qa='account_switcher_team_icon']")) closeHome();
   }
   document.addEventListener("click", onLeaveHome, true);
+  // clicking anywhere else closes the spaces menu
+  const closeSpaces = (e) => {
+    const m = document.getElementById("sdd-spaces-menu");
+    if (m && !e.target.closest("#sdd-spaces-menu, [data-act='spaces']")) m.hidden = true;
+  };
+  document.addEventListener("click", closeSpaces, true);
   window.addEventListener("resize", placeHome);
 
   // called on theme changes and every tick: keeps the button and page in step
@@ -1130,6 +1180,7 @@
     document.querySelectorAll("[data-sdd-rail]").forEach((el) => el.removeAttribute("data-sdd-rail"));
     dashEl?.remove();
     document.removeEventListener("click", onLeaveHome, true);
+    document.removeEventListener("click", closeSpaces, true);
     window.removeEventListener("resize", placeHome);
     themeStyle?.remove();
     document.body.classList.remove(...Object.keys(THEMES).map((t) => `sdd-${t}`));
