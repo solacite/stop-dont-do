@@ -772,7 +772,7 @@
                   linear-gradient(180deg, rgba(15,25,35,.7), transparent 18%);
     }
     #sdd-home .nav {
-      position: absolute; left: 0; right: 260px; top: 0; height: 64px; display: flex; align-items: center; gap: 26px; padding: 0 32px;
+      position: absolute; left: 0; right: 0; top: 0; height: 64px; display: flex; align-items: center; gap: 26px; padding: 0 32px;
       font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: rgba(236,232,225,.6);
     }
     #sdd-home .nav button {
@@ -821,12 +821,14 @@
     }
     #sdd-spaces-menu button:hover { color: #ece8e1; background: rgba(236,232,225,.08); }
     #sdd-spaces-menu button.on { color: #ece8e1; box-shadow: inset 3px 0 0 var(--sdd-acc, #ff4655); cursor: default; }
-    #sdd-home .play {
-      position: absolute; top: 12px; right: 32px; padding: 10px 56px; border: 0; cursor: pointer;
+    /* play sits at the end of the top bar; on the background (dash mode, other pages) it hides */
+    #sdd-home .nav button.play {
+      position: relative; padding: 10px 44px; border: 0; cursor: pointer;
       background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff); font: 700 22px/1 Bahnschrift, sans-serif; letter-spacing: .2em; text-transform: uppercase;
       clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
     }
-    #sdd-home .play:hover { filter: brightness(1.1); }
+    #sdd-home .nav button.play:hover { filter: brightness(1.1); color: var(--sdd-accfg, #fff); }
+    #sdd-home .nav button.play::after { display: none; }
     #sdd-home .hero { position: absolute; left: 48px; bottom: 56px; max-width: 46%; }
     #sdd-home .tag {
       display: inline-block; padding: 4px 10px; background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff);
@@ -1285,9 +1287,9 @@
             <div class="menu" role="menu" hidden>${workspaceItems()}</div>
           </div>
           <button type="button" data-act="profile">Profile</button>
+          <button class="play" type="button" title="Back to Slack">Play</button>
         </div>
       </div>
-      <button class="play" type="button" title="Back to Slack">Play</button>
       <div class="hero">
         <span class="tag">It's go time!</span>
         <h1>OODLIA JU</h1>
