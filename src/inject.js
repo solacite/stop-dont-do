@@ -528,7 +528,7 @@
       accent,
       accentFg: onColor(accent),
       // accent as readable text on the background
-      link: light ? mix(accent, "#000000", lum(accent) > 0.3 ? 0.35 : 0) : mix(accent, "#ffffff", lum(accent) < 0.12 ? 0.3 : 0),
+      link: light ? mix(accent, "#000000", lum(accent) > 0.3 ? 0.35 : 0) : mix(accent, "#ffffff", lum(accent) < 0.2 ? 0.5 : 0),
     };
   }
 
@@ -779,14 +779,10 @@
     #sdd-home .nav button:hover { color: #ece8e1; }
     #sdd-home .nav .on { color: #ece8e1; cursor: default; }
     #sdd-home .nav .on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: var(--sdd-acc, #ff4655); }
-    /* unread marker above dms / activity / home, mirrored from slack's rail */
+    /* unread count right before the label (4DMS), mirrored from slack's rail */
     #sdd-home .nav button[data-badge]::before {
-      content: attr(data-badge); position: absolute; left: 50%; top: -12px; transform: translateX(-50%);
-      min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px !important;
-      background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff);
-      font: 700 10px/16px Bahnschrift, sans-serif; letter-spacing: 0; text-align: center;
+      content: attr(data-badge); color: color-mix(in srgb, var(--sdd-acc, #ff4655) 75%, #ffffff); font-weight: 700; margin-right: 2px;
     }
-    #sdd-home .nav button[data-badge="•"]::before { content: ""; min-width: 8px; width: 8px; height: 8px; padding: 0; top: -8px; }
     #sdd-home .nav .right { margin-left: auto; display: flex; gap: 26px; align-items: center; }
     #sdd-home .spaces { position: relative; }
     /* lives on body above everything, so slack's panes (in dash mode) can't cover it */
@@ -1021,7 +1017,6 @@
       <div class="shade"></div>
       <div class="nav">
         <button type="button" class="on" data-act="dash">Dash</button>
-        <button type="button" data-tab="tab_rail_home_button">Home</button>
         <button type="button" data-act="channels">Channels</button>
         <button type="button" data-tab="tab_rail_dms_button">DMs</button>
         <button type="button" data-tab="tab_rail_activity_button">Activity</button>
@@ -1184,12 +1179,14 @@
     homeEl = null;
   }
 
-  // dash mode's channels tab: home, with the channel list shown again until you pick one
+  // the channels tab is slack's home: click it to go there with the channel list
+  // showing, click it again to tuck the list away
   function toggleDrawer(force) {
-    const open = force ?? !document.body.classList.contains("sdd-drawer");
+    const onHome = document.querySelector('[data-qa="tab_rail_home_button"]')?.classList.contains("p-tab_rail__button--active");
+    const open = force ?? (!onHome || homeOpen || !document.body.classList.contains("sdd-drawer"));
     if (open) {
       closeHome();
-      document.querySelector('[data-qa="tab_rail_home_button"]')?.click();
+      if (!onHome) document.querySelector('[data-qa="tab_rail_home_button"]')?.click();
     }
     document.body.classList.toggle("sdd-drawer", open);
     setTimeout(() => {
@@ -1199,8 +1196,8 @@
   }
   function onDrawerPick(e) {
     if (!document.body.classList.contains("sdd-drawer")) return;
-    if (e.target.closest("#sdd-home .nav button:not([data-act='channels'])")) return toggleDrawer(false);
-    if (e.target.closest(".p-channel_sidebar__list [data-qa-channel-sidebar-channel-id]")) setTimeout(() => toggleDrawer(false), 150);
+    // going to another tab tucks the list away; picking a channel leaves it open
+    if (e.target.closest("#sdd-home .nav > button:not([data-act='channels'])")) document.body.classList.remove("sdd-drawer");
   }
   document.addEventListener("click", onDrawerPick, true);
   cleanups.push(() => {
@@ -1213,11 +1210,11 @@
     if (!homeEl) return;
     const active = document.querySelector(".p-tab_rail__button--active[data-qa]")?.getAttribute("data-qa");
     for (const b of homeEl.querySelectorAll(".nav > button")) {
-      const drawer = document.body.classList.contains("sdd-drawer");
-      const on = homeOpen ? b.dataset.act === "dash" : drawer ? b.dataset.act === "channels" : !!active && b.dataset.tab === active;
+      const tab = b.dataset.tab || (b.dataset.act === "channels" ? "tab_rail_home_button" : null);
+      const on = homeOpen ? b.dataset.act === "dash" : !!active && tab === active;
       b.classList.toggle("on", on);
-      // copy slack's unread badge (a count) or unread dot from the matching rail tab
-      const rail = b.dataset.tab && document.querySelector(`[data-qa="${b.dataset.tab}"]`);
+      // copy slack's unread count (or unread dot) from the matching rail tab
+      const rail = tab && document.querySelector(`[data-qa="${tab}"]`);
       const badge = rail?.querySelector(".c-badge, .p-unread_dot");
       const value = badge ? badge.textContent.trim() || "•" : null;
       if (value === null) b.removeAttribute("data-badge");
