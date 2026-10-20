@@ -779,6 +779,14 @@
     #sdd-home .nav button:hover { color: #ece8e1; }
     #sdd-home .nav .on { color: #ece8e1; cursor: default; }
     #sdd-home .nav .on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: var(--sdd-acc, #ff4655); }
+    /* unread marker above dms / activity / home, mirrored from slack's rail */
+    #sdd-home .nav button[data-badge]::before {
+      content: attr(data-badge); position: absolute; left: 50%; top: -12px; transform: translateX(-50%);
+      min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px !important;
+      background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff);
+      font: 700 10px/16px Bahnschrift, sans-serif; letter-spacing: 0; text-align: center;
+    }
+    #sdd-home .nav button[data-badge="•"]::before { content: ""; min-width: 8px; width: 8px; height: 8px; padding: 0; top: -8px; }
     #sdd-home .nav .right { margin-left: auto; display: flex; gap: 26px; align-items: center; }
     #sdd-home .spaces { position: relative; }
     /* lives on body above everything, so slack's panes (in dash mode) can't cover it */
@@ -1208,6 +1216,12 @@
       const drawer = document.body.classList.contains("sdd-drawer");
       const on = homeOpen ? b.dataset.act === "dash" : drawer ? b.dataset.act === "channels" : !!active && b.dataset.tab === active;
       b.classList.toggle("on", on);
+      // copy slack's unread badge (a count) or unread dot from the matching rail tab
+      const rail = b.dataset.tab && document.querySelector(`[data-qa="${b.dataset.tab}"]`);
+      const badge = rail?.querySelector(".c-badge, .p-unread_dot");
+      const value = badge ? badge.textContent.trim() || "•" : null;
+      if (value === null) b.removeAttribute("data-badge");
+      else if (b.getAttribute("data-badge") !== value) b.setAttribute("data-badge", value);
     }
   }
 
@@ -1246,8 +1260,8 @@
     } else if (homeEl) {
       if (!dashMode() && homeEl.classList.contains("bg")) closeHome();
       placeHome();
-      markNav();
     }
+    markNav();
   }
   cleanups.push(() => {
     destroyHome();
