@@ -182,6 +182,83 @@
     }
   }
 
+  // ---------------------------------------------------------------- slack's own buttons
+  // each one is either a css selector, a function that finds the element(s), or a
+  // sidebar row key (those go through the sidebar re-packing below)
+
+  // a rail tab is wrapped a few levels deep; hide the wrapper that sits directly in the rail
+  const railTab = (qa) => () => {
+    let el = document.querySelector(`[data-qa="${qa}"]`);
+    while (el && el.parentElement && !el.parentElement.classList.contains("p-tab_rail__tab_menu")) el = el.parentElement;
+    return [el?.parentElement ? el : null];
+  };
+  const UI_GROUPS = [
+    {
+      label: "Top bar",
+      items: [
+        { key: "appMenu", label: "Menu (☰)", css: '[data-qa="windows-titlebar-app-menu"]' },
+        { key: "wsSwitcher", label: "Workspace switcher", css: ".p-workspace_switcher_container__button" },
+        { key: "history", label: "Back, forward & history", css: '[data-qa="history_back_button"], [data-qa="history_forward_button"], [data-qa="top-nav-history-menu"]' },
+        { key: "agents", label: "Agents", find: () => [document.querySelector('button[aria-label="More agents"]')?.parentElement] },
+        { key: "help", label: "Help (?)", css: ".p-top_nav__help" },
+      ],
+    },
+    {
+      label: "Left rail",
+      items: [
+        { key: "teamIcon", label: "Workspace icon", css: '[data-qa="account_switcher_team_icon"]' },
+        { key: "railHome", label: "Home", find: railTab("tab_rail_home_button") },
+        { key: "railDms", label: "DMs", find: railTab("tab_rail_dms_button") },
+        { key: "railActivity", label: "Activity", find: railTab("tab_rail_activity_button") },
+        { key: "railFiles", label: "Files", find: railTab("tab_rail_files_button") },
+        { key: "railLater", label: "To-dos", find: railTab("tab_rail_later_button") },
+        { key: "railMore", label: "More", find: railTab("tab_rail_browse_button") },
+        { key: "create", label: "Create new (+)", css: 'button[aria-label="Create new"]' },
+        { key: "focus", label: "Focus mode (moon)", css: '[data-qa="silent-sidebar-trigger"]' },
+      ],
+    },
+    {
+      label: "Sidebar",
+      items: [
+        { key: "findConvo", label: "Find a conversation", css: ".p-sidebar_text_filter_input_header" },
+        { key: "threads", label: "Threads", row: "Vall_threads" },
+        { key: "huddles", label: "Huddles", row: "Pbrowse-huddles" },
+        { key: "drafts", label: "Drafts & sent", row: "Pdrafts" },
+        { key: "saved", label: "Saved", row: "Pbookmarks" },
+        { key: "directories", label: "Directories", row: "unified_directory" },
+      ],
+    },
+  ];
+  const UI_ITEMS = UI_GROUPS.flatMap((g) => g.items);
+  const ROW_KEYS = Object.fromEntries(UI_ITEMS.filter((i) => i.row).map((i) => [i.row, i.key]));
+  settings.hiddenUi ||= {};
+
+  // sidebar rows we hide by key; the divider under them goes once they're all gone
+  function isRowHidden(key) {
+    if (ROW_KEYS[key]) return !!settings.hiddenUi[ROW_KEYS[key]];
+    if (key === "pagesDivider") return Object.values(ROW_KEYS).every((k) => settings.hiddenUi[k]);
+    return false;
+  }
+
+  let uiStyle = null;
+  function applyUi() {
+    uiStyle ||= document.head.appendChild(Object.assign(document.createElement("style"), { id: "sdd-ui" }));
+    const hidden = UI_ITEMS.filter((i) => settings.hiddenUi[i.key] && !i.row);
+    uiStyle.textContent = hidden.map((i) => [i.css, `[data-sdd-ui="${i.key}"]`].filter(Boolean).join(", ") + " { display: none !important; }").join("\n");
+    markUi();
+  }
+
+  function markUi() {
+    for (const i of UI_ITEMS) {
+      if (!i.find) continue;
+      for (const el of i.find()) if (el && el.getAttribute("data-sdd-ui") !== i.key) el.setAttribute("data-sdd-ui", i.key);
+    }
+  }
+  cleanups.push(() => {
+    uiStyle?.remove();
+    document.querySelectorAll("[data-sdd-ui]").forEach((el) => el.removeAttribute("data-sdd-ui"));
+  });
+
   // ---------------------------------------------------------------- sidebar hiding
   // the sidebar is a virtual list where every row is absolutely positioned,
   // so hidden rows leave holes. we remember where slack put each row and
@@ -298,7 +375,7 @@
         if (r.kind === "heading") section = r.sec;
         const sec = r.kind === "heading" ? r.sec : r.sec || section;
         shiftAt.set(key, shift);
-        if (isSectionHidden(sec) || isChannelHidden(r.ch)) {
+        if (isSectionHidden(sec) || isChannelHidden(r.ch) || isRowHidden(key)) {
           hidden.add(key);
           shift += r.slot;
         }
@@ -512,13 +589,117 @@
     body.sdd-valorant, body.sdd-valorant *${NOT_ICONS} { font-family: Bahnschrift, "DIN Next", "D-DIN", "Arial Narrow", sans-serif !important; }
     body.sdd-valorant * { border-radius: 0 !important; }
     body.sdd-valorant .c-avatar img, body.sdd-valorant .c-base_icon { border-radius: 0 !important; }
-    body.sdd-valorant .p-view_contents--primary {
-      background:
-        radial-gradient(900px 500px at 100% 100%, color-mix(in srgb, var(--sdd-acc) 14%, transparent), transparent 70%),
-        repeating-linear-gradient(135deg, transparent 0 26px, color-mix(in srgb, var(--sdd-fg) 2.5%, transparent) 26px 27px),
-        var(--sdd-bg) !important;
-    }
+    /* let the animated background (#sdd-val-fx) show through the main panes */
+    body.sdd-valorant .p-view_contents--primary,
+    body.sdd-valorant .p-view_contents--primary .c-scrollbar__hider,
+    body.sdd-valorant .p-view_header--primary-background { background: color-mix(in srgb, var(--sdd-bg) 55%, transparent) !important; }
+    body.sdd-valorant .p-view_contents--primary .c-scrollbar__hider { background: transparent !important; }
+    body.sdd-valorant .p-view_contents--sidebar { background: color-mix(in srgb, var(--sdd-side) 82%, transparent) !important; backdrop-filter: blur(2px); }
     body.sdd-valorant .c-message_kit__background, body.sdd-valorant .c-virtual_list__item { background-color: transparent; }
+
+    #sdd-val-fx { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: var(--sdd-bg); }
+    #sdd-val-fx > * { position: absolute; will-change: transform, opacity; }
+    #sdd-val-fx .glow {
+      inset: 0;
+      background:
+        radial-gradient(70% 60% at 100% 100%, color-mix(in srgb, var(--sdd-acc) 22%, transparent), transparent 70%),
+        radial-gradient(50% 50% at 0% 0%, color-mix(in srgb, var(--sdd-fg) 6%, transparent), transparent 70%),
+        linear-gradient(160deg, transparent 40%, rgba(0,0,0,.35));
+      animation: sdd-pulse 7s ease-in-out infinite alternate;
+    }
+    #sdd-val-fx .grid {
+      inset: 0;
+      background:
+        linear-gradient(color-mix(in srgb, var(--sdd-fg) 4%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
+        linear-gradient(90deg, color-mix(in srgb, var(--sdd-fg) 4%, transparent) 1px, transparent 1px) 0 0 / 48px 48px;
+      mask-image: radial-gradient(80% 80% at 70% 60%, #000, transparent 75%);
+    }
+    #sdd-val-fx .lines {
+      top: -10%; bottom: -10%; left: -120px; right: -120px;
+      background: repeating-linear-gradient(135deg, transparent 0 38px, color-mix(in srgb, var(--sdd-fg) 3%, transparent) 38px 40px);
+      animation: sdd-lines 6s linear infinite;
+    }
+    #sdd-val-fx .shard {
+      width: 46vw; height: 140vh; top: -20vh;
+      background: linear-gradient(180deg, color-mix(in srgb, var(--sdd-acc) 16%, transparent), color-mix(in srgb, var(--sdd-acc) 3%, transparent));
+      clip-path: polygon(38% 0, 100% 0, 62% 100%, 0 100%);
+    }
+    #sdd-val-fx .s1 { right: -8vw; animation: sdd-drift 22s ease-in-out infinite alternate; }
+    #sdd-val-fx .s2 { right: 18vw; width: 14vw; opacity: .55; animation: sdd-drift 30s ease-in-out -9s infinite alternate-reverse; }
+    #sdd-val-fx .s3 {
+      right: 30vw; width: 3px; background: color-mix(in srgb, var(--sdd-acc) 50%, transparent); clip-path: none;
+      transform: skewX(-21deg); animation: sdd-drift 26s ease-in-out -4s infinite alternate;
+    }
+    #sdd-val-fx .slash {
+      top: -30%; height: 160%; width: 160px; left: 0;
+      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sdd-acc) 35%, transparent) 45%, color-mix(in srgb, #fff 30%, var(--sdd-acc)) 50%, transparent 55%);
+      transform: translateX(-30vw) skewX(-21deg); opacity: 0;
+      animation: sdd-slash 11s cubic-bezier(.7,0,.3,1) 2s infinite;
+    }
+    #sdd-val-fx .scan {
+      inset: 0; opacity: .5;
+      background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
+    }
+    #sdd-val-fx .mark {
+      right: 3vw; bottom: 4vh; width: 22vw; max-width: 340px; aspect-ratio: 1; opacity: .07; color: var(--sdd-acc);
+      animation: sdd-pulse 7s ease-in-out infinite alternate-reverse;
+    }
+    @keyframes sdd-lines { to { transform: translate3d(-56.57px, 0, 0); } }
+    @keyframes sdd-drift { from { transform: translate3d(0, -2vh, 0) skewX(-2deg); } to { transform: translate3d(-6vw, 2vh, 0) skewX(2deg); } }
+    @keyframes sdd-pulse { from { opacity: .75; } to { opacity: 1; } }
+    @keyframes sdd-slash {
+      0% { transform: translateX(-30vw) skewX(-21deg); opacity: 0; }
+      8% { opacity: 1; }
+      22% { transform: translateX(120vw) skewX(-21deg); opacity: 0; }
+      100% { transform: translateX(120vw) skewX(-21deg); opacity: 0; }
+    }
+
+    /* motion on the ui itself */
+    body.sdd-valorant .p-channel_sidebar__channel, body.sdd-valorant [data-qa="channel-sidebar-chan"],
+    body.sdd-valorant .p-channel_sidebar__link {
+      background-image: linear-gradient(90deg, color-mix(in srgb, var(--sdd-acc) 28%, transparent), transparent) !important;
+      background-repeat: no-repeat !important; background-size: 0% 100% !important;
+      transition: background-size .25s ease, box-shadow .2s ease, transform .2s ease !important;
+    }
+    body.sdd-valorant .p-channel_sidebar__channel:hover, body.sdd-valorant [data-qa="channel-sidebar-chan"]:hover,
+    body.sdd-valorant .p-channel_sidebar__link:hover {
+      background-size: 100% 100% !important; box-shadow: inset 2px 0 0 var(--sdd-acc) !important; transform: translateX(2px);
+    }
+    body.sdd-valorant [data-qa-channel-sidebar-channel-is-selected="true"] { animation: sdd-select .32s cubic-bezier(.2,.8,.2,1); }
+    @keyframes sdd-select {
+      from { clip-path: polygon(0 0, 0 0, 0 calc(100% - 9px), 0 100%, 0 100%); }
+      to { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%); }
+    }
+    body.sdd-valorant .c-message_kit__background { transition: box-shadow .2s ease, background-color .2s ease; }
+    body.sdd-valorant .c-message_kit__background:hover {
+      box-shadow: inset 2px 0 0 var(--sdd-acc); background-color: color-mix(in srgb, var(--sdd-fg) 4%, transparent) !important;
+    }
+    body.sdd-valorant .p-tab_rail__button { transition: transform .15s ease; }
+    body.sdd-valorant .p-tab_rail__button:hover { transform: translateY(-2px); }
+    body.sdd-valorant .p-tab_rail__button:hover .p-tab_rail__button__label { color: var(--sdd-acc) !important; }
+    body.sdd-valorant .c-tabs__tab { transition: box-shadow .2s ease, color .2s ease; }
+    body.sdd-valorant .c-tabs__tab:hover { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--sdd-acc) 50%, transparent) !important; }
+    body.sdd-valorant .p-top_nav__search { border-bottom: 1px solid color-mix(in srgb, var(--sdd-fg) 25%, transparent) !important; transition: border-color .2s; }
+    body.sdd-valorant .p-top_nav__search:hover { border-color: var(--sdd-acc) !important; }
+    /* bahnschrift reads heavy at slack's weights, so lighten the everyday text */
+    body.sdd-valorant .p-rich_text_section, body.sdd-valorant .p-rich_text_list, body.sdd-valorant .c-message_kit__blocks,
+    body.sdd-valorant .c-message_attachment, body.sdd-valorant .ql-editor, body.sdd-valorant .p-view_header__topic {
+      font-weight: 300 !important; letter-spacing: .01em !important;
+    }
+    body.sdd-valorant .p-rich_text_section b, body.sdd-valorant .p-rich_text_section strong { font-weight: 600 !important; }
+    body.sdd-valorant [data-qa="channel-sidebar-chan"] { font-weight: 350 !important; }
+    /* corner ticks on the message box, like valorant's framed panels */
+    body.sdd-valorant .c-wysiwyg_container {
+      background:
+        linear-gradient(var(--sdd-fg2), var(--sdd-fg2)) left top / 12px 2px no-repeat,
+        linear-gradient(var(--sdd-fg2), var(--sdd-fg2)) left top / 2px 12px no-repeat,
+        linear-gradient(var(--sdd-fg2), var(--sdd-fg2)) right bottom / 12px 2px no-repeat,
+        linear-gradient(var(--sdd-fg2), var(--sdd-fg2)) right bottom / 2px 12px no-repeat,
+        color-mix(in srgb, var(--sdd-bg) 88%, transparent) !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #sdd-val-fx *, body.sdd-valorant * { animation: none !important; transition: none !important; }
+    }
     body.sdd-valorant [data-qa^="channel_sidebar__section_heading_label"],
     body.sdd-valorant .p-tab_rail__button__label,
     body.sdd-valorant .c-tabs__tab,
@@ -533,9 +714,10 @@
       clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%);
       box-shadow: inset 3px 0 0 var(--sdd-accfg) !important;
     }
-    body.sdd-valorant .c-message__sender_button { letter-spacing: .03em !important; font-weight: 700 !important; }
-    body.sdd-valorant .c-wysiwyg_container { border: 1px solid var(--sdd-border) !important; box-shadow: none !important; }
-    body.sdd-valorant .c-wysiwyg_container:focus-within { border-color: var(--sdd-acc) !important; box-shadow: inset 0 -2px 0 var(--sdd-acc) !important; }
+    body.sdd-valorant .c-message__sender_button { letter-spacing: .03em !important; font-weight: 600 !important; }
+    body.sdd-valorant .c-wysiwyg_container, body.sdd-valorant .c-wysiwyg_container:focus-within {
+      border: 1px solid var(--sdd-border) !important; box-shadow: none !important; outline: none !important;
+    }
     body.sdd-valorant .c-wysiwyg_container__button--send:not(.c-wysiwyg_container__button--disabled) {
       background: var(--sdd-acc) !important; color: var(--sdd-accfg) !important;
       clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
@@ -573,7 +755,7 @@
       ${sel} { ${decls} }
       body.sdd-${name} {
         --sdd-bg: ${p.bg}; --sdd-fg: ${p.fg}; --sdd-fg2: ${p.fg2}; --sdd-border: ${p.border};
-        --sdd-acc: ${p.accent}; --sdd-accfg: ${p.accentFg};
+        --sdd-acc: ${p.accent}; --sdd-accfg: ${p.accentFg}; --sdd-side: ${p.side};
         background: ${p.bg} !important; color: ${p.fg} !important;
       }
       html:has(body.sdd-${name}), body.sdd-${name}, body.sdd-${name} * { color-scheme: ${p.light ? "light" : "dark"} !important; }
@@ -589,8 +771,27 @@
     `;
     document.head.appendChild(themeStyle);
     document.body.classList.add(`sdd-${name}`);
+    mountFx();
+  }
+
+  // valorant's moving background lives inside slack's own background layer
+  const FX_MARK = `<svg viewBox="0 0 100 100" fill="currentColor" aria-hidden="true"><path d="M4 18l40 64h20L24 18zM96 18L70 58H50l26-40z"/></svg>`;
+  function mountFx() {
+    const want = document.body.classList.contains("sdd-valorant");
+    let fx = document.getElementById("sdd-val-fx");
+    if (!want) return fx?.remove();
+    const host = document.querySelector(".p-theme_background");
+    if (!host || fx?.parentElement === host) return;
+    fx?.remove();
+    fx = h(`<div id="sdd-val-fx">
+      <div class="glow"></div><div class="grid"></div><div class="lines"></div>
+      <div class="shard s1"></div><div class="shard s2"></div><div class="shard s3"></div>
+      <div class="slash"></div><div class="mark">${FX_MARK}</div><div class="scan"></div>
+    </div>`);
+    host.appendChild(fx);
   }
   cleanups.push(() => {
+    document.getElementById("sdd-val-fx")?.remove();
     themeStyle?.remove();
     document.body.classList.remove(...Object.keys(THEMES).map((t) => `sdd-${t}`));
   });
@@ -671,6 +872,15 @@
     #sdd-panel .fold.on { color: var(--accfg); background: var(--acc); border-color: var(--acc); }
     #sdd-panel .off > .name { color: var(--fg2); text-decoration: line-through; }
     #sdd-panel input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); cursor: pointer; flex: none; }
+    #sdd-panel details.ui { padding: 0 0 8px; }
+    #sdd-panel details.ui summary { cursor: pointer; list-style: none; user-select: none; }
+    #sdd-panel details.ui summary::before { content: "›"; display: inline-block; width: 12px; transition: transform .15s; }
+    #sdd-panel details.ui[open] summary::before { transform: rotate(90deg); }
+    #sdd-panel details.ui .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+    #sdd-panel .ui-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; padding: 2px 18px 6px; }
+    #sdd-panel .ui-title { font-size: 11px; color: var(--fg2); margin: 4px 0; font-weight: 600; }
+    #sdd-panel .ui-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 0; cursor: pointer; }
+    #sdd-panel .ui-item.off .name { color: var(--fg2); text-decoration: line-through; }
     #sdd-panel footer { padding: 10px 18px; border-top: 1px solid var(--line); color: var(--fg2); font-size: 12px; }
   `;
 
@@ -747,6 +957,10 @@
       <div class="label">Theme</div>
       <div class="themes"></div>
       <div class="colors"></div>
+      <details class="ui">
+        <summary class="label">Slack buttons <span class="hint"></span></summary>
+        <div class="ui-groups"></div>
+      </details>
       <div class="label">Sections</div>
       <div class="tools">
         <input type="search" placeholder="Filter sections and channels">
@@ -775,8 +989,31 @@
     });
     panelEl.querySelector('[data-act="refresh"]').addEventListener("click", () => refreshList(true));
     panelEl.querySelector(".list").addEventListener("click", onListClick);
+    panelEl.querySelector(".ui-groups").addEventListener("change", (e) => {
+      const key = e.target.dataset.ui;
+      if (!key) return;
+      e.target.checked ? delete settings.hiddenUi[key] : (settings.hiddenUi[key] = true);
+      save();
+      applyUi();
+      layoutSidebar();
+      renderUi();
+    });
 
     renderThemes();
+    renderUi();
+  }
+
+  function renderUi() {
+    const hiddenCount = UI_ITEMS.filter((i) => settings.hiddenUi[i.key]).length;
+    panelEl.querySelector(".ui .hint").textContent = hiddenCount ? `· ${hiddenCount} hidden` : "";
+    panelEl.querySelector(".ui-groups").innerHTML = UI_GROUPS.map(
+      (g) => `<div class="ui-group"><div class="ui-title">${esc(g.label)}</div>${g.items
+        .map(
+          (i) => `<label class="ui-item ${settings.hiddenUi[i.key] ? "off" : ""}">
+            <input type="checkbox" data-ui="${i.key}" ${settings.hiddenUi[i.key] ? "" : "checked"}><span class="name">${esc(i.label)}</span></label>`,
+        )
+        .join("")}</div>`,
+    ).join("");
   }
 
   function onListClick(e) {
@@ -1002,6 +1239,7 @@
   function init() {
     buildPanel();
     applyTheme();
+    applyUi();
     layoutSidebar();
     loadSections(false).then(scheduleLayout, () => {});
     document.addEventListener("keydown", onKey, true);
@@ -1012,6 +1250,8 @@
       const list = document.querySelector(".p-channel_sidebar__list .c-virtual_list__scroll_container");
       if (list !== observedList) layoutSidebar();
       mountRailButton();
+      markUi();
+      mountFx();
       if (!document.getElementById("sdd-theme") && THEMES[settings.theme]?.base) applyTheme();
       const ws = location.pathname.split("/")[2];
       if (ws !== lastWs) {
