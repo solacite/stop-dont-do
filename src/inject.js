@@ -556,7 +556,81 @@
     terminal: { label: "Terminal", base: { bg: "#050805", side: "#000000", fg: "#33ff66", accent: "#33ff66" } },
   };
 
-  const baseFor = (name) => ({ ...THEMES[name]?.base, ...settings.colors[name] });
+  const baseFor = (name) => {
+    const b = { ...THEMES[name]?.base, ...settings.colors[name] };
+    if (name === "valorant" && settings.videoAccent && videoAccent.color) b.accent = videoAccent.color;
+    return b;
+  };
+
+  // "match accent to the video": the most vivid colour in the dash video's thumbnail.
+  // (youtube's player itself can't be read from here, but its thumbnail image can.)
+  const videoAccent = { id: null, color: null };
+  function pickVividColor(img) {
+    const c = document.createElement("canvas");
+    c.width = 64;
+    c.height = 36;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0, 64, 36);
+    const px = g.getImageData(0, 0, 64, 36).data;
+    // bucket by hue, weighting colourful, not-too-dark pixels
+    const buckets = Array.from({ length: 24 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
+    for (let i = 0; i < px.length; i += 4) {
+      const [r, gr, b] = [px[i], px[i + 1], px[i + 2]];
+      const max = Math.max(r, gr, b);
+      const min = Math.min(r, gr, b);
+      const sat = max ? (max - min) / max : 0;
+      if (sat < 0.25 || max < 60) continue;
+      let hue = 0;
+      if (max === r) hue = ((gr - b) / (max - min)) % 6;
+      else if (max === gr) hue = (b - r) / (max - min) + 2;
+      else hue = (r - gr) / (max - min) + 4;
+      const k = Math.floor(((hue * 60 + 360) % 360) / 15);
+      const w = sat * sat * (max / 255);
+      Object.assign(buckets[k], { w: buckets[k].w + w, r: buckets[k].r + r * w, g: buckets[k].g + gr * w, b: buckets[k].b + b * w });
+    }
+    const best = buckets.reduce((a, x) => (x.w > a.w ? x : a));
+    if (best.w < 0.5) return null;
+    // keep the hue but make it punchy enough to be an accent (thumbnails run muted)
+    const [r, gr, b] = [best.r / best.w / 255, best.g / best.w / 255, best.b / best.w / 255];
+    const max = Math.max(r, gr, b);
+    const min = Math.min(r, gr, b);
+    const d = max - min;
+    let hue = d === 0 ? 0 : max === r ? ((gr - b) / d) % 6 : max === gr ? (b - r) / d + 2 : (r - gr) / d + 4;
+    hue = (hue * 60 + 360) % 360;
+    const light = Math.min(0.66, Math.max(0.55, (max + min) / 2));
+    const sat = 0.8;
+    const k = (n) => (n + hue / 30) % 12;
+    const a = sat * Math.min(light, 1 - light);
+    const f = (n) => light - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+    return toHex([f(0) * 255, f(8) * 255, f(4) * 255]);
+  }
+
+  async function updateVideoAccent() {
+    if (!settings.videoAccent) return;
+    const id = youtubeId(settings.dashVideo || DEFAULT_VIDEO);
+    if (!id || id === videoAccent.id) return;
+    videoAccent.id = id;
+    for (const size of ["maxresdefault", "hqdefault"]) {
+      try {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        await new Promise((ok, fail) => {
+          img.onload = ok;
+          img.onerror = fail;
+          img.src = `https://i.ytimg.com/vi/${id}/${size}.jpg`;
+        });
+        // youtube serves a tiny grey placeholder when a size doesn't exist
+        if (img.naturalWidth < 200) continue;
+        const col = pickVividColor(img);
+        if (col) {
+          videoAccent.color = col;
+          applyTheme();
+          if (panelEl) renderThemes();
+        }
+        return;
+      } catch {}
+    }
+  }
 
   // slack defines its colours as css variables on a handful of selectors.
   // we find those selectors and redeclare the variables on them.
@@ -740,7 +814,7 @@
       font: inherit;
     }
     #sdd-home .card:hover { border-color: var(--sdd-acc, #ff4655); }
-    #sdd-home .card small { display: block; font-size: 11px; letter-spacing: .2em; color: var(--sdd-acc, #ff4655); margin-bottom: 6px; text-transform: uppercase; }
+    #sdd-home .card small { display: block; font-size: 11px; letter-spacing: .2em; color: color-mix(in srgb, var(--sdd-acc, #ff4655) 65%, #ffffff); margin-bottom: 6px; text-transform: uppercase; }
     #sdd-home .card b { font-size: 16px; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
 
     /* plain hover states, no motion */
@@ -1161,6 +1235,7 @@
   // called on theme changes and every tick: keeps the button and page in step
   function mountFx() {
     mountDash();
+    if (settings.theme === "valorant") updateVideoAccent();
     markRail();
     document.body.classList.toggle("sdd-dashmode", dashMode());
     if (!homeEnabled()) destroyHome();
@@ -1512,6 +1587,7 @@
       name === "valorant"
         ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Dash button in the left rail</span></label>
           <label class="ui-item"><input type="checkbox" data-act="dashmode" ${settings.dashMode ? "checked" : ""}><span class="name">Run Slack from Dash (no rail or channel list)</span></label>
+          <label class="ui-item"><input type="checkbox" data-act="vidaccent" ${settings.videoAccent ? "checked" : ""}><span class="name">Match accent to the Dash video${settings.videoAccent && videoAccent.color ? ` <i style="display:inline-block;width:10px;height:10px;background:${videoAccent.color};vertical-align:middle"></i>` : ""}</span></label>
           <div class="vid">
             <label for="sdd-dash-video">Dash video</label>
             <div class="vid-row">
@@ -1566,6 +1642,17 @@
     vidInput?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") setVideo();
       e.stopPropagation();
+    });
+    wrap.querySelector('[data-act="vidaccent"]')?.addEventListener("change", (e) => {
+      settings.videoAccent = e.target.checked;
+      save();
+      videoAccent.id = null;
+      if (!settings.videoAccent) videoAccent.color = null;
+      if (settings.videoAccent) updateVideoAccent();
+      else {
+        applyTheme();
+        renderThemes();
+      }
     });
     wrap.querySelector('[data-act="dashmode"]')?.addEventListener("change", (e) => {
       settings.dashMode = e.target.checked;
