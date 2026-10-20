@@ -877,9 +877,19 @@
 
   function openHome() {
     if (!homeEnabled()) return;
+    const vid = dashVideo();
+    // still playing from last time: just show it again
+    if (homeEl && homeEl.dataset.src === vid.src) {
+      Object.assign(homeEl.style, { visibility: "", pointerEvents: "" });
+      placeHome();
+      homeOpen = true;
+      homeRoute = location.pathname;
+      dashEl?.querySelector("button")?.classList.add("p-tab_rail__button--active");
+      document.body.classList.add("sdd-dash-open");
+      return;
+    }
     homeEl?.remove();
     muted = true;
-    const vid = dashVideo();
     const media =
       vid.kind === "youtube"
         ? `<iframe src="${esc(vid.src)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Dash video"></iframe>`
@@ -942,6 +952,7 @@
       else homeEl.querySelector("iframe")?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: muted ? "mute" : "unMute", args: [] }), "*");
       homeEl.querySelector(".snd").textContent = muted ? "🔇 Sound off" : "🔊 Sound on";
     });
+    homeEl.dataset.src = vid.src;
     document.body.appendChild(homeEl);
     placeHome();
     const blurb = homeEl.querySelector(".blurb");
@@ -1021,12 +1032,19 @@
   }
 
   let homeRoute = null;
+  // leaving dash only hides it, so the video (and sound) keeps going in the background
   function closeHome() {
-    homeEl?.remove();
-    homeEl = null;
+    if (homeEl) Object.assign(homeEl.style, { visibility: "hidden", pointerEvents: "none" });
     homeOpen = false;
     dashEl?.querySelector("button")?.classList.remove("p-tab_rail__button--active");
     document.body.classList.remove("sdd-dash-open");
+  }
+
+  // actually stops the video: theme changes, dash turned off, or a new video link
+  function destroyHome() {
+    closeHome();
+    homeEl?.remove();
+    homeEl = null;
   }
 
   // picking any other rail tab, the search bar or a workspace leaves the dash
@@ -1040,14 +1058,14 @@
   // called on theme changes and every tick: keeps the button and page in step
   function mountFx() {
     mountDash();
-    if (!homeEnabled()) closeHome();
+    if (!homeEnabled()) destroyHome();
     else if (homeOpen) {
       if (location.pathname !== homeRoute) closeHome();
       else placeHome();
     }
   }
   cleanups.push(() => {
-    closeHome();
+    destroyHome();
     dashEl?.remove();
     document.removeEventListener("click", onLeaveHome, true);
     window.removeEventListener("resize", placeHome);
@@ -1412,7 +1430,9 @@
       settings.dashVideo = url || undefined;
       save();
       note.textContent = url ? (youtubeId(url) ? "Set. Dash will loop that YouTube video." : "Set. Dash will loop that video file.") : "Back to the Hush trailer.";
-      if (homeOpen) openHome();
+      const wasOpen = homeOpen;
+      destroyHome();
+      if (wasOpen) openHome();
     };
     wrap.querySelector('[data-act="video-save"]')?.addEventListener("click", setVideo);
     vidInput?.addEventListener("keydown", (e) => {
