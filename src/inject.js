@@ -1037,7 +1037,7 @@
     // only our dash player; slack's own youtube previews talk on the same channel
     if (!e.source || e.source !== ytFrame()?.contentWindow) return;
     // with spotify on, the controls follow spotify; the video just plays quietly
-    if (useSpotify()) return;
+    if (useSpotify() || useApp()) return;
     let d;
     try {
       d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
@@ -1064,7 +1064,13 @@
     const m = String(url || "").match(/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(playlist|album|track|artist|show|episode)\/([A-Za-z0-9]+)/);
     return m ? `https://open.spotify.com/embed/${m[1]}/${m[2]}` : null;
   }
-  const useSpotify = () => !!spotifyEmbed(settings.spotify);
+  const useApp = () => !!settings.spotifyApp && navigator.userAgent.includes("Windows");
+  const useSpotify = () => !useApp() && !!spotifyEmbed(settings.spotify);
+  // "spotify:playlist:<id>" for opening the link in the desktop app
+  const spotifyUri = (url) => {
+    const m = String(url || "").match(/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(playlist|album|track|artist|show|episode)\/([A-Za-z0-9]+)/);
+    return m ? `spotify:${m[1]}:${m[2]}` : null;
+  };
   const spFrame = () => homeEl?.querySelector("#sdd-spotify");
   const spCmd = (command, extra = {}) => spFrame()?.contentWindow?.postMessage({ command, ...extra }, "*");
   let bridgeSeq = 0;
@@ -1073,12 +1079,12 @@
     bridgeWaiters.get(id)?.(result);
     bridgeWaiters.delete(id);
   };
-  function bridge(action) {
+  function bridge(action, extra = {}, cmd = "spotify") {
     if (typeof window.sddBridge !== "function") return Promise.resolve(null);
     const id = ++bridgeSeq;
     return new Promise((resolve) => {
       bridgeWaiters.set(id, resolve);
-      window.sddBridge(JSON.stringify({ cmd: "spotify", action, id }));
+      window.sddBridge(JSON.stringify({ cmd, action, id, ...extra }));
       setTimeout(() => bridgeWaiters.has(id) && (bridgeWaiters.delete(id), resolve(null)), 3000);
     });
   }
@@ -1101,12 +1107,35 @@
     if (media.time < 2 || !was) refreshSpotifyTrack();
     renderMedia();
   }
+  // the spotify desktop app, via the launcher and windows' media controls
+  const appCmd = (action, extra = {}) => bridge(action, extra, "app");
+  let appBusy = false;
+  let appLast = 0;
+  function applyAppState(st) {
+    if (!st) return;
+    if (!st.ok) {
+      Object.assign(media, { title: "Open Spotify and play something", author: "Spotify app", playing: false, time: 0, dur: 0 });
+    } else {
+      Object.assign(media, { title: st.title || "Spotify", author: st.artist || "Spotify", time: st.time || 0, dur: st.dur || 0, playing: !!st.playing });
+    }
+    renderMedia();
+  }
+  async function pollApp(force) {
+    if (!useApp() || !homeEl || appBusy || (!force && Date.now() - appLast < 1000)) return;
+    appBusy = true;
+    appLast = Date.now();
+    try {
+      applyAppState(await appCmd("state"));
+    } finally {
+      appBusy = false;
+    }
+  }
   window.addEventListener("message", onSpotifyMessage);
   cleanups.push(() => window.removeEventListener("message", onSpotifyMessage));
 
   function renderMedia() {
     if (!homeEl) return;
-    homeEl.querySelector(".media").classList.toggle("spotify", useSpotify());
+    homeEl.querySelector(".media").classList.toggle("spotify", useSpotify() || useApp());
     const toggle = homeEl.querySelector('[data-media="toggle"]');
     const mute = homeEl.querySelector('[data-media="mute"]');
     toggle.innerHTML = media.playing ? MEDIA_ICONS.pause : MEDIA_ICONS.play;
@@ -1125,6 +1154,15 @@
   }
 
   function mediaCommand(cmd, arg) {
+    if (useApp()) {
+      const action = { toggle: "toggle", back: "prev", fwd: "next", seek: "seek" }[cmd];
+      if (!action) return;
+      if (cmd === "toggle") media.playing = !media.playing;
+      if (cmd === "seek") media.time = arg * (media.dur || 0);
+      renderMedia();
+      appCmd(action, { arg: cmd === "seek" ? media.time : undefined }).then(applyAppState);
+      return;
+    }
     if (useSpotify() && spFrame()) {
       if (cmd === "toggle") {
         media.playing = !media.playing;
@@ -1218,7 +1256,7 @@
       const iframe = root.querySelector("iframe");
       const ping = () => iframe.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: "sdd", channel: "widget" }), "*");
       // with spotify on, the video stays muted
-      const quiet = () => useSpotify() && iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "mute", args: [] }), "*");
+      const quiet = () => (useSpotify() || useApp()) && iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "mute", args: [] }), "*");
       iframe.addEventListener("load", () => [0, 800, 2000, 4000].forEach((t) => setTimeout(() => (ping(), quiet()), t)));
     }
     renderMedia();
@@ -1242,7 +1280,7 @@
     if (!homeEnabled()) return;
     const vid = dashVideo();
     // still playing from last time: just show it again
-    if (homeEl && homeEl.dataset.src === vid.src + "|" + (spotifyEmbed(settings.spotify) || "")) {
+    if (homeEl && homeEl.dataset.src === vid.src + "|" + ((useSpotify() && spotifyEmbed(settings.spotify)) || "") + (useApp() ? "|app" : "")) {
       Object.assign(homeEl.style, { visibility: "", pointerEvents: "" });
       homeEl.classList.remove("bg");
       markNav();
@@ -1259,8 +1297,8 @@
       vid.kind === "youtube"
         ? `<iframe src="${esc(vid.src)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Dash video"></iframe>`
         : `<video src="${esc(vid.src)}" autoplay muted loop playsinline tabindex="-1"></video>`;
-    Object.assign(media, { time: 0, dur: 0, playing: !useSpotify(), muted: true, title: "", author: "" });
-    const sp = spotifyEmbed(settings.spotify);
+    Object.assign(media, { time: 0, dur: 0, playing: !useSpotify() && !useApp(), muted: true, title: "", author: "" });
+    const sp = useSpotify() ? spotifyEmbed(settings.spotify) : null;
     const spotifyFrame = sp
       ? `<iframe id="sdd-spotify" src="${esc(sp)}" allow="autoplay; encrypted-media; clipboard-write" tabindex="-1" title="Spotify"></iframe>`
       : "";
@@ -1276,9 +1314,9 @@
         <button type="button" data-tab="tab_rail_later_button">To-dos</button>
         <div class="right">
           <div class="media">
-            <button type="button" data-media="back" title="${useSpotify() ? "Previous song" : "Back 5 seconds"}">${MEDIA_ICONS.back}</button>
+            <button type="button" data-media="back" title="${useSpotify() || useApp() ? "Previous song" : "Back 5 seconds"}">${MEDIA_ICONS.back}</button>
             <button type="button" data-media="toggle" title="Pause">${MEDIA_ICONS.pause}</button>
-            <button type="button" data-media="fwd" title="${useSpotify() ? "Next song" : "Forward 5 seconds"}">${MEDIA_ICONS.fwd}</button>
+            <button type="button" data-media="fwd" title="${useSpotify() || useApp() ? "Next song" : "Forward 5 seconds"}">${MEDIA_ICONS.fwd}</button>
             <input type="range" class="seek" min="0" max="1000" value="0" aria-label="Video position">
             <span class="time">0:00</span>
             <button type="button" data-media="mute" title="Unmute">${MEDIA_ICONS.muted}</button>
@@ -1343,7 +1381,8 @@
     homeEl.querySelector(".play").addEventListener("click", closeHome);
     homeEl.querySelector('[data-act="back"]').addEventListener("click", closeHome);
     wireMedia(homeEl, vid);
-    homeEl.dataset.src = vid.src + "|" + (sp || "");
+    homeEl.dataset.src = vid.src + "|" + (sp || "") + (useApp() ? "|app" : "");
+    if (useApp()) setTimeout(() => pollApp(true), 300);
     document.body.appendChild(homeEl);
     placeHome();
     const blurb = homeEl.querySelector(".blurb");
@@ -1504,6 +1543,7 @@
   function mountFx() {
     mountDash();
     if (settings.theme === "valorant") updateVideoAccent();
+    pollApp();
     markRail();
     document.body.classList.toggle("sdd-dashmode", dashMode());
     document.body.classList.toggle("sdd-novideo", homeEnabled() && !!settings.hideVideo);
@@ -1873,6 +1913,7 @@
               <button class="btn" data-act="spotify-save">Set</button>
             </div>
             <div class="sp-note vid-note"></div>
+            <label class="ui-item"><input type="checkbox" data-act="spapp" ${settings.spotifyApp ? "checked" : ""}><span class="name">Use the Spotify app instead (full songs; the link opens there)</span></label>
           </div>`
         : "";
     wrap.innerHTML = `${presets}${video}<div class="picks">${field("bg", "Background")}${field("side", "Sidebar")}${field("fg", "Text")}${field("accent", "Accent")}
@@ -1924,6 +1965,7 @@
       if (url && !spotifyEmbed(url)) return (note.textContent = "That doesn't look like a Spotify playlist, album or song link.");
       settings.spotify = url || undefined;
       save();
+      if (url && useApp()) appCmd("open", { uri: spotifyUri(url) });
       note.textContent = url ? "Set. Press play in the Dash bar; back/forward now skip songs." : "Back to the video's own sound.";
       const wasOpen = homeOpen;
       destroyHome();
@@ -1931,6 +1973,15 @@
       if (!wasOpen && dashMode()) closeHome();
     };
     wrap.querySelector('[data-act="spotify-save"]')?.addEventListener("click", setSpotify);
+    wrap.querySelector('[data-act="spapp"]')?.addEventListener("change", (e) => {
+      settings.spotifyApp = e.target.checked;
+      save();
+      if (settings.spotifyApp && spotifyUri(settings.spotify)) appCmd("open", { uri: spotifyUri(settings.spotify) });
+      const wasOpen = homeOpen;
+      destroyHome();
+      if (wasOpen || dashMode()) openHome();
+      if (!wasOpen && dashMode()) closeHome();
+    });
     spInput?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") setSpotify();
       e.stopPropagation();

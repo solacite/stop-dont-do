@@ -144,6 +144,40 @@ const SPOTIFY_ACTIONS = {
     return { playlist: document.querySelector('[data-testid="entity-title"]')?.textContent.trim() || "", title: parts[0] || "", artist: parts[1] || "" };
   })()`,
 };
+// the spotify desktop app, through windows' media controls (media.ps1). started the
+// first time dash asks, then kept open; one command in, one line of json out.
+let mediaHelper = null;
+const mediaQueue = [];
+function mediaCommand(line) {
+  if (process.platform !== "win32") return Promise.resolve({ ok: false, reason: "only on windows" });
+  if (!mediaHelper) {
+    mediaHelper = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(here, "media.ps1")], { stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+    let buf = "";
+    mediaHelper.stdout.on("data", (d) => {
+      buf += d;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const out = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!out) continue;
+        let v = null;
+        try {
+          v = JSON.parse(out);
+        } catch {}
+        mediaQueue.shift()?.(v);
+      }
+    });
+    mediaHelper.on("exit", () => {
+      mediaHelper = null;
+      while (mediaQueue.length) mediaQueue.shift()(null);
+    });
+  }
+  return new Promise((resolve) => {
+    mediaQueue.push(resolve);
+    mediaHelper.stdin.write(line + "\n");
+  });
+}
+
 async function handleBridge(payload, send) {
   let msg;
   try {
@@ -151,10 +185,19 @@ async function handleBridge(payload, send) {
   } catch {
     return;
   }
+  const reply = (result) => send("Runtime.evaluate", { expression: `window.__sddBridgeReply?.(${JSON.stringify({ id: msg.id, result })})` }).catch(() => {});
+  if (msg.cmd === "app") {
+    if (msg.action === "open") {
+      // open a playlist/album/song in the spotify app, e.g. spotify:playlist:<id>
+      if (/^spotify:[a-z]+:[A-Za-z0-9]+$/.test(msg.uri || "")) spawn("cmd", ["/c", "start", "", msg.uri], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+      return reply(true);
+    }
+    const line = { state: "state", toggle: "toggle", next: "next", prev: "prev", seek: `seek ${Number(msg.arg) || 0}` }[msg.action];
+    return reply(line ? await mediaCommand(line) : null);
+  }
   const expr = msg.cmd === "spotify" && SPOTIFY_ACTIONS[msg.action];
   if (!expr) return;
-  const result = await evalInFrame("open.spotify.com/embed", expr).catch(() => null);
-  await send("Runtime.evaluate", { expression: `window.__sddBridgeReply?.(${JSON.stringify({ id: msg.id, result })})` }).catch(() => {});
+  return reply(await evalInFrame("open.spotify.com/embed", expr).catch(() => null));
 }
 
 // one websocket per slack page; registers the script for future loads and runs it now
