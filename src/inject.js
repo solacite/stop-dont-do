@@ -765,6 +765,9 @@
       transform: translate(-50%, -50%);
     }
     #sdd-home video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+    /* "hide the video": it keeps playing (sound, controls) behind a plain backdrop */
+    body.sdd-novideo #sdd-home > :is(iframe:not(#sdd-spotify), video) { visibility: hidden; }
+    body.sdd-novideo #sdd-home { background: radial-gradient(120% 90% at 100% 100%, color-mix(in srgb, var(--sdd-acc, #ff4655) 18%, transparent), transparent 60%), var(--sdd-bg, #0f1923); }
     #sdd-home .shade {
       position: absolute; inset: 0; pointer-events: none;
       background: linear-gradient(90deg, rgba(15,25,35,.85), rgba(15,25,35,.35) 45%, transparent 70%),
@@ -1503,6 +1506,7 @@
     if (settings.theme === "valorant") updateVideoAccent();
     markRail();
     document.body.classList.toggle("sdd-dashmode", dashMode());
+    document.body.classList.toggle("sdd-novideo", homeEnabled() && !!settings.hideVideo);
     if (!homeEnabled()) destroyHome();
     else if (dashMode() && !homeEl) openHome();
     else if (homeOpen) {
@@ -1516,7 +1520,7 @@
   }
   cleanups.push(() => {
     destroyHome();
-    document.body.classList.remove("sdd-dashmode");
+    document.body.classList.remove("sdd-dashmode", "sdd-novideo");
     document.querySelectorAll("[data-sdd-rail]").forEach((el) => el.removeAttribute("data-sdd-rail"));
     dashEl?.remove();
     document.removeEventListener("click", onLeaveHome, true);
@@ -1852,6 +1856,7 @@
       name === "valorant"
         ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Dash button in the left rail</span></label>
           <label class="ui-item"><input type="checkbox" data-act="dashmode" ${settings.dashMode ? "checked" : ""}><span class="name">Run Slack from Dash (no rail or channel list)</span></label>
+          <label class="ui-item"><input type="checkbox" data-act="novideo" ${settings.hideVideo ? "checked" : ""}><span class="name">Hide the video (keeps its sound)</span></label>
           <label class="ui-item"><input type="checkbox" data-act="vidaccent" ${settings.videoAccent ? "checked" : ""}><span class="name">Match accent to the Dash video${settings.videoAccent && videoAccent.color ? ` <i style="display:inline-block;width:10px;height:10px;background:${videoAccent.color};vertical-align:middle"></i>` : ""}</span></label>
           <div class="vid">
             <label for="sdd-dash-video">Dash video</label>
@@ -1933,6 +1938,11 @@
     vidInput?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") setVideo();
       e.stopPropagation();
+    });
+    wrap.querySelector('[data-act="novideo"]')?.addEventListener("change", (e) => {
+      settings.hideVideo = e.target.checked;
+      save();
+      mountFx();
     });
     wrap.querySelector('[data-act="vidaccent"]')?.addEventListener("change", (e) => {
       settings.videoAccent = e.target.checked;
