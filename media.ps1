@@ -13,24 +13,32 @@ function Await($op, [Type]$t) {
 [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime] | Out-Null
 $mgr = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
 
-# spotify's session if there is one
+# whatever is playing on this computer: something that's playing right now first, then
+# what windows considers current, then spotify. slack itself (the dash video) is skipped.
 function Get-Session {
-  $all = @($mgr.GetSessions())
-  $s = $all | Where-Object { $_.SourceAppUserModelId -match 'spotify' } | Select-Object -First 1
-  if (-not $s) { return $null }
-  $s
+  $all = @($mgr.GetSessions() | Where-Object { $_.SourceAppUserModelId -notmatch 'slack' })
+  if (-not $all.Count) { return $null }
+  $playing = $all | Where-Object { $_.GetPlaybackInfo().PlaybackStatus -eq 'Playing' } | Select-Object -First 1
+  if ($playing) { return $playing }
+  $current = $mgr.GetCurrentSession()
+  if ($current -and $current.SourceAppUserModelId -notmatch 'slack') { return $current }
+  $spotify = $all | Where-Object { $_.SourceAppUserModelId -match 'spotify' } | Select-Object -First 1
+  if ($spotify) { return $spotify }
+  $all[0]
 }
 
 function Get-State {
   $s = Get-Session
-  if (-not $s) { return @{ ok = $false; reason = 'spotify is not playing anything' } }
+  if (-not $s) { return @{ ok = $false; reason = 'nothing is playing on this computer' } }
   $p = Await ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
   $tl = $s.GetTimelineProperties()
   $playing = $s.GetPlaybackInfo().PlaybackStatus -eq 'Playing'
   # spotify only reports its position now and then, so move it forward by the time since
   $pos = $tl.Position.TotalSeconds
   if ($playing) { $pos += ([DateTimeOffset]::Now - $tl.LastUpdatedTime).TotalSeconds }
-  @{ ok = $true; title = $p.Title; artist = $p.Artist; album = $p.AlbumTitle; time = [math]::Min($pos, $tl.EndTime.TotalSeconds); dur = $tl.EndTime.TotalSeconds; playing = $playing }
+  # "Spotify.exe", "Chrome", "Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic" -> a short app name
+  $app = ($s.SourceAppUserModelId -split '[!\\]')[-1] -replace '\.exe$', ''
+  @{ ok = $true; app = $app; title = $p.Title; artist = $p.Artist; album = $p.AlbumTitle; time = [math]::Min($pos, $tl.EndTime.TotalSeconds); dur = $tl.EndTime.TotalSeconds; playing = $playing }
 }
 
 [Console]::Out.Flush()
