@@ -733,6 +733,9 @@
     /* the channels tab: bring the channel list back as a sidebar until you pick one */
     body.sdd-dashmode.sdd-drawer .p-view_contents--sidebar:has(.p-channel_sidebar__list) { display: flex !important; }
     body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel:has(.p-channel_sidebar__list) { grid-template-columns: 300px 1fr !important; }
+    /* keep a column for the right-hand panel (profiles, threads, details) when one is open */
+    body.sdd-dashmode .p-client_workspace__tabpanel:has(.p-channel_sidebar__list):has(.p-view_contents--secondary) { grid-template-columns: 0 1fr 600px !important; }
+    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel:has(.p-channel_sidebar__list):has(.p-view_contents--secondary) { grid-template-columns: 300px 1fr 600px !important; }
     body.sdd-dashmode .p-client_workspace_wrapper, body.sdd-dashmode .p-client_workspace_wrapper * {
       --dt_color-base-pry: transparent !important; --dt_color-base-sec: transparent !important; --dt_color-base-ter: transparent !important;
       --dt_color-theme-base-pry: transparent !important; --dt_color-theme-base-sec: transparent !important;
@@ -785,6 +788,23 @@
     }
     #sdd-home .nav .right { margin-left: auto; display: flex; gap: 26px; align-items: center; }
     #sdd-home .spaces { position: relative; }
+    #sdd-home .nav .media { display: flex; align-items: center; gap: 12px; letter-spacing: .04em; }
+    #sdd-home .nav .media button { padding: 4px; display: grid; place-items: center; color: rgba(236,232,225,.75); }
+    #sdd-home .nav .media button:hover { color: #ece8e1; }
+    #sdd-home .nav .seek {
+      width: 180px; height: 4px; margin: 0; cursor: pointer; appearance: none; -webkit-appearance: none; border-radius: 2px !important;
+      background: linear-gradient(90deg, var(--sdd-acc, #ff4655) var(--p, 0%), rgba(236,232,225,.25) var(--p, 0%));
+    }
+    #sdd-home .nav .vol {
+      width: 80px; height: 4px; margin: 0; cursor: pointer; appearance: none; -webkit-appearance: none; border-radius: 2px !important;
+      background: linear-gradient(90deg, #ece8e1 var(--p, 100%), rgba(236,232,225,.25) var(--p, 100%));
+    }
+    #sdd-home .nav .vol::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px; border-radius: 50% !important; background: #ece8e1; }
+    #sdd-home .nav .seek::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50% !important; background: #ece8e1; }
+    #sdd-home .nav .time { font-size: 12px; min-width: 88px; color: rgba(236,232,225,.7); text-transform: none; }
+    #sdd-home .card.now { cursor: default; width: 300px; }
+    #sdd-home .card.now b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #sdd-home .card.now small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* lives on body above everything, so slack's panes (in dash mode) can't cover it */
     #sdd-spaces-menu {
       position: fixed; z-index: 9500; min-width: 220px; padding: 6px 0;
@@ -976,6 +996,162 @@
   let homeEl = null;
   let muted = true;
 
+  // ---- dash media controls (top bar) and the "now playing" card
+  const ic = (d) => `<svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor" aria-hidden="true">${d}</svg>`;
+  const MEDIA_ICONS = {
+    back: ic('<path d="M9 5 3 10l6 5V5zm8 0-6 5 6 5V5z"/>'),
+    fwd: ic('<path d="m11 5 6 5-6 5V5zM3 5l6 5-6 5V5z"/>'),
+    pause: ic('<path d="M5 4h3.5v12H5zm6.5 0H15v12h-3.5z"/>'),
+    play: ic('<path d="M6 4v12l10-6z"/>'),
+    muted: ic('<path d="M3 7.5h3L10 4v12l-4-3.5H3z"/><path d="m12.5 7.5 5 5m0-5-5 5" stroke="currentColor" stroke-width="1.6" fill="none"/>'),
+    sound: ic('<path d="M3 7.5h3L10 4v12l-4-3.5H3z"/><path d="M13 7a4 4 0 0 1 0 6m2-8.5a7 7 0 0 1 0 11" stroke="currentColor" stroke-width="1.6" fill="none"/>'),
+  };
+  const media = { time: 0, dur: 0, playing: true, muted: true, title: "", author: "", volume: 100 };
+  let mediaDragging = false;
+
+  const fmtTime = (s) => {
+    s = Math.max(0, Math.floor(s || 0));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = String(s % 60).padStart(2, "0");
+    return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  };
+  const todayLabel = () => {
+    const d = new Date();
+    return `${d.toLocaleDateString("en-US", { month: "short" })} ${d.getDate()} // ${d.toLocaleDateString("en-US", { weekday: "short" })}`;
+  };
+
+  // youtube's embed player talks over postMessage: we ask it to report in, then it
+  // streams its time, length, play state and title back
+  const ytFrame = () => homeEl?.querySelector("iframe");
+  const ytCmd = (func, args = []) => ytFrame()?.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "*");
+  function onPlayerMessage(e) {
+    // only our dash player; slack's own youtube previews talk on the same channel
+    if (!e.source || e.source !== ytFrame()?.contentWindow) return;
+    let d;
+    try {
+      d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+    } catch {
+      return;
+    }
+    const i = d?.info;
+    if (d?.event !== "infoDelivery" || !i) return;
+    if (typeof i.currentTime === "number") media.time = i.currentTime;
+    if (typeof i.duration === "number" && i.duration) media.dur = i.duration;
+    if (typeof i.playerState === "number") media.playing = i.playerState === 1 || i.playerState === 3;
+    if (typeof i.muted === "boolean") media.muted = i.muted;
+    if (typeof i.volume === "number") media.volume = i.volume;
+    if (i.videoData?.title) Object.assign(media, { title: i.videoData.title, author: i.videoData.author || "" });
+    renderMedia();
+  }
+  window.addEventListener("message", onPlayerMessage);
+  cleanups.push(() => window.removeEventListener("message", onPlayerMessage));
+
+  function renderMedia() {
+    if (!homeEl) return;
+    const toggle = homeEl.querySelector('[data-media="toggle"]');
+    const mute = homeEl.querySelector('[data-media="mute"]');
+    toggle.innerHTML = media.playing ? MEDIA_ICONS.pause : MEDIA_ICONS.play;
+    toggle.title = media.playing ? "Pause" : "Play";
+    mute.innerHTML = media.muted ? MEDIA_ICONS.muted : MEDIA_ICONS.sound;
+    mute.title = media.muted ? "Unmute" : "Mute";
+    const seek = homeEl.querySelector(".seek");
+    if (!mediaDragging) seek.value = media.dur ? Math.round((media.time / media.dur) * 1000) : 0;
+    seek.style.setProperty("--p", `${seek.value / 10}%`);
+    homeEl.querySelector(".time").textContent = media.dur ? `${fmtTime(media.time)} / ${fmtTime(media.dur)}` : fmtTime(media.time);
+    const vol = homeEl.querySelector(".vol");
+    if (document.activeElement !== vol) vol.value = media.muted ? 0 : media.volume;
+    vol.style.setProperty("--p", `${vol.value}%`);
+    homeEl.querySelector(".np-title").textContent = media.title || "On loop";
+    homeEl.querySelector(".np-by").textContent = media.author || "Now playing";
+  }
+
+  function mediaCommand(cmd, arg) {
+    const v = homeEl?.querySelector("video");
+    if (cmd === "toggle") {
+      media.playing = !media.playing;
+      if (v) media.playing ? v.play() : v.pause();
+      else ytCmd(media.playing ? "playVideo" : "pauseVideo");
+    } else if (cmd === "back" || cmd === "fwd") {
+      const t = Math.max(0, Math.min(media.dur || Infinity, media.time + (cmd === "fwd" ? 5 : -5)));
+      media.time = t;
+      if (v) v.currentTime = t;
+      else ytCmd("seekTo", [t, true]);
+    } else if (cmd === "seek") {
+      const t = arg * (media.dur || 0);
+      media.time = t;
+      if (v) v.currentTime = t;
+      else ytCmd("seekTo", [t, true]);
+    } else if (cmd === "mute") {
+      media.muted = !media.muted;
+      muted = media.muted;
+      if (v) v.muted = media.muted;
+      else {
+        if (!media.muted && !media.volume) {
+          media.volume = 60;
+          ytCmd("setVolume", [60]);
+        }
+        ytCmd(media.muted ? "mute" : "unMute");
+      }
+    }
+    renderMedia();
+  }
+
+  function wireMedia(root, vid) {
+    root.querySelector(".media").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-media]");
+      if (b) {
+        e.stopPropagation();
+        mediaCommand(b.dataset.media);
+      }
+    });
+    const seek = root.querySelector(".seek");
+    seek.addEventListener("input", () => {
+      mediaDragging = true;
+      seek.style.setProperty("--p", `${seek.value / 10}%`);
+      root.querySelector(".time").textContent = `${fmtTime((seek.value / 1000) * media.dur)} / ${fmtTime(media.dur)}`;
+    });
+    seek.addEventListener("change", () => {
+      mediaDragging = false;
+      mediaCommand("seek", seek.value / 1000);
+    });
+    seek.addEventListener("keydown", (e) => e.stopPropagation());
+    // volume: dragging it up from zero also unmutes
+    const vol = root.querySelector(".vol");
+    vol.addEventListener("input", () => {
+      const n = Number(vol.value);
+      vol.style.setProperty("--p", `${n}%`);
+      media.volume = n;
+      const vEl = root.querySelector("video");
+      if (vEl) {
+        vEl.volume = n / 100;
+        vEl.muted = n === 0;
+      } else {
+        ytCmd("setVolume", [n]);
+        ytCmd(n === 0 ? "mute" : "unMute");
+      }
+      media.muted = n === 0;
+      muted = media.muted;
+      renderMedia();
+    });
+    vol.addEventListener("keydown", (e) => e.stopPropagation());
+    const v = root.querySelector("video");
+    if (v) {
+      const sync = () => {
+        Object.assign(media, { time: v.currentTime, dur: v.duration || 0, playing: !v.paused, muted: v.muted });
+        media.title ||= decodeURIComponent((vid.src.split("/").pop() || "").split("?")[0]) || "Your video";
+        renderMedia();
+      };
+      for (const ev of ["timeupdate", "play", "pause", "volumechange", "loadedmetadata"]) v.addEventListener(ev, sync);
+    } else {
+      // keep asking the player to report in until it does
+      const iframe = root.querySelector("iframe");
+      const ping = () => iframe.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: "sdd", channel: "widget" }), "*");
+      iframe.addEventListener("load", () => [0, 800, 2000, 4000].forEach((t) => setTimeout(ping, t)));
+    }
+    renderMedia();
+  }
+
   // covers everything under the top bar, left rail included
   function placeHome() {
     if (!homeEl) return;
@@ -1011,7 +1187,7 @@
       vid.kind === "youtube"
         ? `<iframe src="${esc(vid.src)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media" tabindex="-1" title="Dash video"></iframe>`
         : `<video src="${esc(vid.src)}" autoplay muted loop playsinline tabindex="-1"></video>`;
-    const card = vid.custom ? ["Your video", "On loop"] : ["Agent trailer", "Rise and fall"];
+    Object.assign(media, { time: 0, dur: 0, playing: true, muted: true, title: "", author: "" });
     homeEl = h(`<section id="sdd-home" aria-label="Dash">
       ${media}
       <div class="shade"></div>
@@ -1023,6 +1199,15 @@
         <button type="button" data-tab="tab_rail_later_button">To-dos</button>
         <button type="button" data-act="panel">Sidebar</button>
         <div class="right">
+          <div class="media">
+            <button type="button" data-media="back" title="Back 5 seconds">${MEDIA_ICONS.back}</button>
+            <button type="button" data-media="toggle" title="Pause">${MEDIA_ICONS.pause}</button>
+            <button type="button" data-media="fwd" title="Forward 5 seconds">${MEDIA_ICONS.fwd}</button>
+            <input type="range" class="seek" min="0" max="1000" value="0" aria-label="Video position">
+            <span class="time">0:00</span>
+            <button type="button" data-media="mute" title="Unmute">${MEDIA_ICONS.muted}</button>
+            <input type="range" class="vol" min="0" max="100" value="100" aria-label="Volume">
+          </div>
           <div class="spaces">
             <button type="button" data-act="spaces" aria-haspopup="menu">Spaces ▾</button>
             <div class="menu" role="menu" hidden>${workspaceItems()}</div>
@@ -1038,8 +1223,8 @@
         <p class="blurb">Checking the weather in Burlington…</p>
       </div>
       <div class="cards">
-        <button class="card" data-act="sound" type="button"><small>${card[0]}</small><b>${card[1]}</b><div class="snd">🔇 Sound off</div></button>
-        <button class="card" data-act="back" type="button"><small>Season 26 // Act VI</small><b>Back to Slack</b></button>
+        <div class="card now"><small class="np-by">Now playing</small><b class="np-title">…</b></div>
+        <button class="card" data-act="back" type="button"><small>${esc(todayLabel())}</small><b>Back to Slack</b></button>
       </div>
     </section>`);
     // the spaces menu moves to body so it sits above slack's panes in dash mode
@@ -1080,13 +1265,7 @@
     });
     homeEl.querySelector(".play").addEventListener("click", closeHome);
     homeEl.querySelector('[data-act="back"]').addEventListener("click", closeHome);
-    homeEl.querySelector('[data-act="sound"]').addEventListener("click", () => {
-      muted = !muted;
-      const v = homeEl.querySelector("video");
-      if (v) v.muted = muted;
-      else homeEl.querySelector("iframe")?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: muted ? "mute" : "unMute", args: [] }), "*");
-      homeEl.querySelector(".snd").textContent = muted ? "🔇 Sound off" : "🔊 Sound on";
-    });
+    wireMedia(homeEl, vid);
     homeEl.dataset.src = vid.src;
     document.body.appendChild(homeEl);
     placeHome();

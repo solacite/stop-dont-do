@@ -85,7 +85,9 @@ const YT_TWEAK = `(() => {
     ".caption-window", ".ytp-cued-thumbnail-overlay", ".ytp-spinner", ".ytp-bezel", ".ytp-bezel-text-wrapper",
     ".ytp-doubletap-ui-legacy", ".ytp-watermark", ".ytp-youtube-button", ".ytp-title", ".ytp-ce-element",
     ".ytp-paid-content-overlay", ".ytp-impression-link", ".ytp-endscreen-content", ".ytp-show-cards-title",
-    ".ytp-overflow-overlay", ".ytp-contextmenu", ".ytp-tooltip", ".branding-img"
+    ".ytp-overflow-overlay", ".ytp-contextmenu", ".ytp-tooltip", ".branding-img",
+    // youtube's newer player chrome
+    "player-middle-controls", "[class*='player-controls']", "player-top-controls", "player-bottom-controls"
   ].join(",") + " { display: none !important; }";
   document.documentElement.appendChild(style);
   let tries = 0;
@@ -102,7 +104,7 @@ const YT_TWEAK = `(() => {
     } catch {}
     // autoplay sometimes doesn't start on its own; nudge it (muted, so it's allowed)
     try {
-      if (p.getPlayerState() !== 1) { if (p.isMuted && !p.isMuted()) p.mute(); p.playVideo(); }
+      if (tries < 4 && p.getPlayerState() !== 1) { if (p.isMuted && !p.isMuted()) p.mute(); p.playVideo(); }
     } catch {}
     if (++tries < 20) setTimeout(tune, 1000);
   };
