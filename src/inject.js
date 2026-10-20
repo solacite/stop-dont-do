@@ -744,10 +744,10 @@
       color: var(--sdd-read-color, inherit) !important; font-weight: var(--sdd-read-weight, inherit) !important;
     }
     [data-sdd-group] [data-qa^="channel_sidebar__section_heading_label"] { cursor: pointer; }
-    [data-sdd-group] [data-qa^="channel_sidebar__section_heading_label"]::after {
-      content: "▾"; display: inline-block; margin-left: 6px; opacity: .55; font-size: 11px; transition: transform .15s;
+    [data-sdd-group] [data-qa^="section_heading_toggle_and_label"]::after {
+      content: "▾"; flex: none; align-self: center; margin-left: 6px; opacity: .55; font-size: 11px; line-height: 1; transition: transform .15s;
     }
-    [data-sdd-group="folded"] [data-qa^="channel_sidebar__section_heading_label"]::after { transform: rotate(-90deg); }
+    [data-sdd-group="folded"] [data-qa^="section_heading_toggle_and_label"]::after { transform: rotate(-90deg); }
     #sdd-fab {
       position: fixed; left: 10px; bottom: 90px; z-index: 9999; width: 34px; height: 34px; border-radius: 10px; border: 0;
       background: rgba(127,127,127,.25); color: inherit; cursor: pointer; display: grid; place-items: center;
