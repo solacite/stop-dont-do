@@ -2204,6 +2204,11 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
 
   function togglePanel(force) {
     const open = force ?? !panelEl.classList.contains("open");
+    // open below the dash bar when it's showing, so its Sidebar button (the way to close
+    // this) never ends up underneath the panel
+    const nav = homeEl?.querySelector(".nav");
+    const barShown = nav && (homeOpen || homeEl.classList.contains("bg")) && homeEl.style.visibility !== "hidden";
+    panelEl.style.top = barShown ? `${Math.round(nav.getBoundingClientRect().bottom)}px` : "";
     panelEl.classList.toggle("open", open);
     // the rail button shows as active while the panel is open, since it's also how you close it
     fabEl?.querySelector("button")?.classList.toggle("p-tab_rail__button--active", open);
