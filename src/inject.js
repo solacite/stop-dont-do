@@ -38,6 +38,10 @@
 
   async function api(method, params = {}) {
     const { id, team } = workspace();
+    return teamApi(id, team, method, params);
+  }
+
+  async function teamApi(id, team, method, params = {}) {
     const fd = new FormData();
     fd.append("token", team.token);
     for (const [k, v] of Object.entries(params)) fd.append(k, v);
@@ -1565,9 +1569,17 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
       else if (b.dataset.act === "panel") togglePanel();
       else if (b.dataset.act === "spaces") toggleSpaces(b);
       else if (b.dataset.act === "profile") {
-        // slack's profile menu hangs off the avatar in the rail, so bring the rail back first
+        // slack's profile lives in the avatar menu; open it and pick Profile so it lands in the right panel
+        // (after this click finishes, or slack reads it as a click outside its menu and shuts it)
         closeHome();
-        document.querySelector('[data-qa="user-button"]')?.click();
+        setTimeout(() => document.querySelector('[data-qa="user-button"]')?.click(), 50);
+        let tries = 0;
+        const pick = () => {
+          const item = [...document.querySelectorAll('[data-qa="menu_item_button"]')].find((e) => e.textContent.trim() === "Profile");
+          if (item) item.click();
+          else if (++tries < 20) setTimeout(pick, 100);
+        };
+        setTimeout(pick, 150);
       } else if (b.dataset.team) switchWorkspace(b.dataset.team);
     });
     homeEl.querySelector(".play").addEventListener("click", closeHome);
@@ -1923,6 +1935,8 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     #sdd-panel .ui-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; padding: 2px 18px 6px; }
     #sdd-panel .ui-title { font-size: 11px; color: var(--fg2); margin: 4px 0; font-weight: 600; }
     #sdd-panel .ui-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 0; cursor: pointer; }
+    #sdd-panel .ui-item.silent { margin: 2px 0 6px; }
+    body.sdd-silent #sdd-home .nav button[data-badge]::before, body.sdd-silent .ws-pings { display: none !important; }
     #sdd-panel .ui-item.off .name { color: var(--fg2); text-decoration: line-through; }
     #sdd-panel footer { padding: 10px 18px; border-top: 1px solid var(--line); color: var(--fg2); font-size: 12px; }
   `;
@@ -2011,6 +2025,38 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     }
   }
 
+  // silent mode: slack's own "pause notifications" in every signed-in workspace, renewed while
+  // it's on so it never runs out, and the unread counts on the dash bar hidden too. a pause you
+  // set yourself is left alone, and turning silent mode off only ends the pauses it started.
+  let silentAt = 0;
+  async function applySilent(force) {
+    document.body.classList.toggle("sdd-silent", !!settings.silent);
+    if (!force && (!settings.silent || Date.now() - silentAt < 60 * 60 * 1000)) return;
+    silentAt = Date.now();
+    const teams = JSON.parse(localStorage.getItem("localConfig_v2") || "{}").teams || {};
+    const ours = new Set(settings.silentTeams || []);
+    await Promise.all(
+      Object.entries(teams).map(async ([id, team]) => {
+        try {
+          if (!settings.silent) {
+            if (ours.has(id)) await teamApi(id, team, "dnd.endSnooze");
+            return ours.delete(id);
+          }
+          if (!ours.has(id)) {
+            const d = await teamApi(id, team, "dnd.info");
+            // (a minute of leeway: slack's clock can run a little ahead of this one)
+            const now = Date.now() / 1000;
+            if (d.snooze_enabled || (d.dnd_enabled && d.next_dnd_start_ts <= now + 60 && now < d.next_dnd_end_ts)) return;
+          }
+          await teamApi(id, team, "dnd.setSnooze", { num_minutes: 1440 });
+          ours.add(id);
+        } catch {}
+      }),
+    );
+    settings.silentTeams = [...ours];
+    save();
+  }
+
   function buildPanel() {
     baseStyle = document.createElement("style");
     baseStyle.id = "sdd-base";
@@ -2021,6 +2067,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
 
     panelEl = h(`<aside id="sdd-panel" aria-label="stop dont do">
       <header><h2>Sidebar & themes</h2></header>
+      <label class="ui-item silent"><input type="checkbox" data-act="silent"><span class="name">Silent mode (pause notifications in every workspace)</span></label>
       <div class="label">Theme</div>
       <div class="themes"></div>
       <div class="colors"></div>
@@ -2039,6 +2086,13 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     </aside>`);
     document.body.appendChild(panelEl);
 
+    const silentBox = panelEl.querySelector('[data-act="silent"]');
+    silentBox.checked = !!settings.silent;
+    silentBox.addEventListener("change", (e) => {
+      settings.silent = e.target.checked;
+      save();
+      applySilent(true);
+    });
     panelEl.querySelector("input[type=search]").addEventListener("input", (e) => {
       query = e.target.value.trim().toLowerCase();
       renderList();
@@ -2445,6 +2499,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
       mountRailButton();
       markUi();
       mountFx();
+      applySilent(false);
       if (!document.getElementById("sdd-theme") && THEMES[settings.theme]?.base) applyTheme();
       const ws = location.pathname.split("/")[2];
       if (ws !== lastWs) {
