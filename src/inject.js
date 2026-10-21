@@ -785,6 +785,10 @@
     body.sdd-dashmode [data-sdd-rail], body.sdd-dashmode .p-control_strip { display: none !important; }
     /* the wrapper is a grid with a fixed column for the rail; give that space back */
     body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
+    /* slack sizes the message column in px as if the rail were there, which left a strip empty to the
+       right of an open thread or profile; let that column take whatever's left instead */
+    body.sdd-dashmode [class*="tabpanelSidebarPrimarySecondary__"] { grid-template-columns: var(--ia4-layout-sidebar-width) minmax(0, 1fr) var(--ia4-layout-secondary-width) !important; }
+    body.sdd-dashmode [class*="tabpanelPrimarySecondary__"] { grid-template-columns: minmax(0, 1fr) var(--ia4-layout-secondary-width) !important; }
     body.sdd-dashmode .p-client_workspace_wrapper {
       margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
     }
