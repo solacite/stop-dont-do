@@ -776,21 +776,12 @@
     body.sdd-dashmode [data-sdd-rail], body.sdd-dashmode .p-control_strip { display: none !important; }
     /* the wrapper is a grid with a fixed column for the rail; give that space back */
     body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
-    body.sdd-dashmode .p-view_contents--sidebar[data-sdd-chanpane] { display: none !important; }
-    /* home's grid still reserves the channel list's column, so hand it to the channel view */
-    body.sdd-dashmode .p-client_workspace__tabpanel[data-sdd-home] { grid-template-columns: 0 1fr !important; }
     body.sdd-dashmode .p-client_workspace_wrapper {
       margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
     }
     body.sdd-dashmode.sdd-dash-open .p-client_workspace_wrapper { visibility: hidden; }
     /* slack's menus, pop-ups and the emoji picker open on body; keep them above the raised panes */
     body.sdd-dashmode :is(.ReactModal__Overlay, .c-popover, .c-tooltip, .ReactModalPortal > div, .c-toast, [class*="toast__"], .p-download_modal, .p-downloads_modal) { z-index: 9400 !important; }
-    /* the channels tab: bring the channel list back as a sidebar until you pick one */
-    body.sdd-dashmode.sdd-drawer .p-view_contents--sidebar[data-sdd-chanpane] { display: flex !important; }
-    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel[data-sdd-home] { grid-template-columns: 300px 1fr !important; }
-    /* keep a column for the right-hand panel (profiles, threads, details) when one is open */
-    body.sdd-dashmode .p-client_workspace__tabpanel[data-sdd-home][data-sdd-secondary] { grid-template-columns: 0 1fr 600px !important; }
-    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel[data-sdd-home][data-sdd-secondary] { grid-template-columns: 300px 1fr 600px !important; }
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-client_workspace, .p-client_workspace__layout, .p-view_header,
       .p-view_header--primary-background, .c-scrollbar__hider, .p-message_pane, .p-workspace__primary_view) { background: transparent !important; }
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-view_contents--primary, .p-view_contents--sidebar, .p-view_contents--secondary) {
@@ -1547,31 +1538,16 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     homeEl = null;
   }
 
-  // the channels tab is slack's home: click it to go there with the channel list
-  // showing, click it again to tuck the list away
-  function toggleDrawer(force) {
-    const onHome = document.querySelector('[data-qa="tab_rail_home_button"]')?.classList.contains("p-tab_rail__button--active");
-    const open = force ?? (!onHome || homeOpen || !document.body.classList.contains("sdd-drawer"));
-    if (open) {
-      closeHome();
-      if (!onHome) document.querySelector('[data-qa="tab_rail_home_button"]')?.click();
-    }
-    document.body.classList.toggle("sdd-drawer", open);
+  // the channels tab is slack's home, channel list and all
+  function toggleDrawer() {
+    closeHome();
+    const home = document.querySelector('[data-qa="tab_rail_home_button"]');
+    if (!home?.classList.contains("p-tab_rail__button--active")) home?.click();
     setTimeout(() => {
       layoutSidebar();
       markNav();
     }, 200);
   }
-  function onDrawerPick(e) {
-    if (!document.body.classList.contains("sdd-drawer")) return;
-    // going to another tab tucks the list away; picking a channel leaves it open
-    if (e.target.closest("#sdd-home .nav > button:not([data-act='channels'])")) document.body.classList.remove("sdd-drawer");
-  }
-  document.addEventListener("click", onDrawerPick, true);
-  cleanups.push(() => {
-    document.removeEventListener("click", onDrawerPick, true);
-    document.body.classList.remove("sdd-drawer");
-  });
 
   // underline whichever tab you're on in the dash top bar
   function markNav() {
