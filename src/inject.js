@@ -838,6 +838,7 @@
     #sdd-home .nav .right { margin-left: auto; display: flex; gap: 26px; align-items: center; }
     #sdd-home .spaces { position: relative; }
     body.sdd-nomedia #sdd-home .nav .media { display: none !important; }
+    body.sdd-compactmedia #sdd-home .nav .media :is(.seek, .time, .vol, [data-media="mute"]) { display: none !important; }
     #sdd-home .nav .media { display: flex; align-items: center; gap: 12px; letter-spacing: .04em; }
     #sdd-home .nav .media button { padding: 4px; display: grid; place-items: center; color: rgba(236,232,225,.75); }
     #sdd-home .nav .media button:hover { color: #ece8e1; }
@@ -1760,6 +1761,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     document.body.classList.toggle("sdd-dashmode", dashMode());
     document.body.classList.toggle("sdd-novideo", homeEnabled() && !!settings.hideVideo);
     document.body.classList.toggle("sdd-nomedia", homeEnabled() && !!settings.hideMediaBar);
+    document.body.classList.toggle("sdd-compactmedia", homeEnabled() && !!settings.compactMedia);
     if (!homeEnabled()) destroyHome();
     else if (dashMode() && !homeEl) openHome();
     else if (homeOpen) {
@@ -1773,7 +1775,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
   }
   cleanups.push(() => {
     destroyHome();
-    document.body.classList.remove("sdd-dashmode", "sdd-novideo", "sdd-nomedia");
+    document.body.classList.remove("sdd-dashmode", "sdd-novideo", "sdd-nomedia", "sdd-compactmedia");
     document.querySelectorAll("[data-sdd-rail]").forEach((el) => el.removeAttribute("data-sdd-rail"));
     dashEl?.remove();
     document.removeEventListener("click", onLeaveHome, true);
@@ -2125,6 +2127,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
       name === "valorant"
         ? `<label class="ui-item"><input type="checkbox" data-act="home" ${settings.home ? "checked" : ""}><span class="name">Dash button in the left rail</span></label>
           <label class="ui-item"><input type="checkbox" data-act="dashmode" ${settings.dashMode ? "checked" : ""}><span class="name">Run Slack from Dash (no rail or channel list)</span></label>
+          <label class="ui-item"><input type="checkbox" data-act="compactmedia" ${settings.compactMedia ? "checked" : ""}><span class="name">Compact music bar (just back, play/pause, forward)</span></label>
           <label class="ui-item"><input type="checkbox" data-act="nomedia" ${settings.hideMediaBar ? "checked" : ""}><span class="name">Hide the music bar (play, seek, volume)</span></label>
           <label class="ui-item"><input type="checkbox" data-act="novideo" ${settings.hideVideo ? "checked" : ""}><span class="name">Hide the video (keeps its sound)</span></label>
           <label class="ui-item"><input type="checkbox" data-act="vidaccent" ${settings.videoAccent ? "checked" : ""}><span class="name">Match accent to the Dash video${settings.videoAccent && videoAccent.color ? ` <i style="display:inline-block;width:10px;height:10px;background:${videoAccent.color};vertical-align:middle"></i>` : ""}</span></label>
@@ -2219,6 +2222,11 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     vidInput?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") setVideo();
       e.stopPropagation();
+    });
+    wrap.querySelector('[data-act="compactmedia"]')?.addEventListener("change", (e) => {
+      settings.compactMedia = e.target.checked;
+      save();
+      mountFx();
     });
     wrap.querySelector('[data-act="nomedia"]')?.addEventListener("change", (e) => {
       settings.hideMediaBar = e.target.checked;
