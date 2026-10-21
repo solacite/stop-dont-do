@@ -882,11 +882,13 @@
     #sdd-home .nav button.play:hover { filter: brightness(1.1); color: var(--sdd-accfg, #fff); }
     #sdd-home .nav button.play::after { display: none; }
     #sdd-home .hero { position: absolute; left: 48px; bottom: 56px; max-width: 46%; }
+    #sdd-home .hero h1 { max-width: none; }
     #sdd-home .tag {
       display: inline-block; padding: 4px 10px; background: var(--sdd-acc, #ff4655); color: var(--sdd-accfg, #fff);
       font-size: 12px; letter-spacing: .2em; font-weight: 700; text-transform: uppercase;
     }
-    #sdd-home h1 { margin: 10px 0 2px; font-size: clamp(64px, 11vw, 150px); line-height: .85; font-weight: 700; letter-spacing: .02em; font-stretch: condensed; }
+    /* one line, sized to the page so it never wraps */
+    #sdd-home h1 { margin: 10px 0 2px; white-space: nowrap; font-size: clamp(48px, 8.5vw, 150px); line-height: .85; font-weight: 700; letter-spacing: .02em; font-stretch: condensed; }
     #sdd-home .role { font-size: 15px; letter-spacing: .24em; text-transform: uppercase; color: rgba(236,232,225,.75); }
     #sdd-home .blurb { margin: 14px 0 0; font-size: 15px; line-height: 1.5; color: rgba(236,232,225,.85); max-width: 420px; }
     #sdd-home .cards { position: absolute; right: 32px; bottom: 32px; display: flex; gap: 12px; }
