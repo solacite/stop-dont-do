@@ -187,6 +187,15 @@ async function handleBridge(payload, send) {
     return;
   }
   const reply = (result) => send("Runtime.evaluate", { expression: `window.__sddBridgeReply?.(${JSON.stringify({ id: msg.id, result })})` }).catch(() => {});
+  // open a channel by id through slack's deep link (windows hands it to slack, which
+  // switches to that exact channel). ids are checked so nothing else can be opened.
+  if (msg.cmd === "open" && /^[TE][A-Z0-9]{6,}$/.test(msg.team || "") && /^[CGD][A-Z0-9]{6,}$/.test(msg.channel || "")) {
+    const url = `slack://channel?team=${msg.team}&id=${msg.channel}`;
+    // (not cmd /c start: cmd would read the & in the link as a second command)
+    if (process.platform === "win32") spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    else spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+    return reply(true);
+  }
   // a few of slack's own keyboard shortcuts, for pages that may not have a rail tab
   const SHORTCUTS = { todos: { key: "5", code: "Digit5", vk: 53, modifiers: 2 | 8 } }; // ctrl+shift+5
   if (msg.cmd === "shortcut" && SHORTCUTS[msg.name]) {

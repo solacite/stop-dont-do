@@ -1277,11 +1277,19 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
       box?.remove();
       box = h(`<div id="sdd-hidden-mentions"></div>`);
       box.addEventListener("click", (e) => {
-        const row = e.target.closest("[data-name]");
+        const row = e.target.closest("[data-id]");
         if (!row) return;
-        bridge(null, { name: row.dataset.name }, "jump");
+        // straight to the channel through slack's deep link; that needs the workspace's own
+        // id, which for an org (E…) is the workspace inside it (T…)
+        const ws = location.pathname.split("/")[2];
+        let team = ws;
+        try {
+          const teams = JSON.parse(localStorage.getItem("localConfig_v2") || "{}").teams || {};
+          if (ws.startsWith("E")) team = Object.values(teams).find((t) => t.enterprise_id === ws)?.id || ws;
+        } catch {}
+        bridge(null, { team, channel: row.dataset.id }, "open");
         // opening it reads the mentions; drop it from the list right away
-        hiddenMentions.items = hiddenMentions.items.filter((x) => x.name !== row.dataset.name);
+        hiddenMentions.items = hiddenMentions.items.filter((x) => x.id !== row.dataset.id);
         hiddenMentions.at = Date.now() - 25000;
         renderHiddenMentions();
       });
@@ -1289,7 +1297,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     }
     const html = hiddenMentions.items.length
       ? hiddenMentions.items
-          .map((x) => `<button type="button" class="hm-row" data-name="${esc(x.name)}"><span class="hm-name"># ${esc(x.name)}</span><span class="hm-sec">${esc(x.section)}</span><span class="hm-count">${x.mentions}</span></button>`)
+          .map((x) => `<button type="button" class="hm-row" data-id="${esc(x.id)}" title="Open #${esc(x.name)}"><span class="hm-name"># ${esc(x.name)}</span><span class="hm-sec">${esc(x.section)}</span><span class="hm-count">${x.mentions}</span></button>`)
           .join("")
       : `<div class="hm-empty">No mentions in the sections you've hidden.</div>`;
     if (box.innerHTML !== html) box.innerHTML = html;
