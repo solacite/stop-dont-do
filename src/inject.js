@@ -1,4 +1,4 @@
-﻿// stop dont do: runs inside the slack client (app.slack.com).
+// stop dont do: runs inside the slack client (app.slack.com).
 // adds a panel to show/hide sidebar sections and channels, plus themes.
 (() => {
   if (window.__sdd) window.__sdd.destroy();
@@ -63,9 +63,9 @@
     agents: "Agents",
   };
 
-  // sections whose names start with dashes ("â”€â”€ .âœ¦ events") act as group headers
-  const DIVIDER = /^\s*[-â”€â€”â€“â”â•_~]/;
-  const groupLabel = (name) => name.replace(/^[\s\-â”€â€”â€“â”â•_~.âœ¦Â·â€¢*|>:]+/, "").trim() || name;
+  // sections whose names start with dashes ("── .✦ events") act as group headers
+  const DIVIDER = /^\s*[-─—–━═_~]/;
+  const groupLabel = (name) => name.replace(/^[\s\-─—–━═_~.✦·•*|>:]+/, "").trim() || name;
 
   const cache = {}; // workspace id -> { sections, groupOf, names }
 
@@ -118,7 +118,7 @@
         const { channels } = await api("conversations.genericInfo", { updated_channels: JSON.stringify(batch) });
         for (const c of channels || []) {
           if (c.is_im) {
-            names[c.id] = { kind: "dm", label: "â€¦" };
+            names[c.id] = { kind: "dm", label: "…" };
             users.set(c.id, c.user);
           } else if (c.is_mpim) {
             const people = (c.name || "").replace(/^mpdm-|-\d+$/g, "").split("--");
@@ -196,7 +196,7 @@
     {
       label: "Top bar",
       items: [
-        { key: "appMenu", label: "Menu (â˜°)", css: '[data-qa="windows-titlebar-app-menu"]' },
+        { key: "appMenu", label: "Menu (☰)", css: '[data-qa="windows-titlebar-app-menu"]' },
         { key: "wsSwitcher", label: "Workspace switcher", css: ".p-workspace_switcher_container__button" },
         { key: "history", label: "Back, forward & history", css: '[data-qa="history_back_button"], [data-qa="history_forward_button"], [data-qa="top-nav-history-menu"]' },
         { key: "agents", label: "Agents", find: () => [document.querySelector('button[aria-label="More agents"]')?.parentElement] },
@@ -464,7 +464,6 @@
     const item = ".p-channel_sidebar__list .c-virtual_list__item";
     const sels = [
       ...[...secs].map((s) => `${item}[data-item-key="sectionHeading-${s}"]`),
-      ...[...secs].map((s) => `${item}:has([data-qa-channel-sidebar-channel-section-id="${s}"])`),
       ...chans.map((c) => `${item}[data-item-key="${c}"]`),
       ...rowKeys.map((k) => `${item}[data-item-key="${k}"]`),
     ];
@@ -472,7 +471,7 @@
   }
   cleanups.push(() => hideStyle?.remove());
 
-  // clicking a "â”€â”€" divider in the sidebar folds the sections under it
+  // clicking a "──" divider in the sidebar folds the sections under it
   function onSidebarClick(e) {
     const heading = e.target.closest?.('.p-channel_sidebar__list [data-sdd-group]');
     if (!heading || e.target.closest("button:not([data-qa^='section_heading_toggle'])")) return;
@@ -662,6 +661,44 @@
     return (varCache = { names: [...names], selectors: [...selectors], sheets: document.styleSheets.length });
   }
 
+  // which of slack's own selectors set a given property. overriding just those is far
+  // cheaper than a rule on every element (`body *`), which makes the browser recheck the
+  // whole page on every new message or scroll.
+  const selectorCache = new Map();
+  function slackSelectorsSetting(prop) {
+    const key = prop + "|" + document.styleSheets.length;
+    if (selectorCache.has(key)) return selectorCache.get(key);
+    const out = new Set();
+    const walk = (rules) => {
+      for (const r of rules) {
+        if (r.cssRules?.length) walk(r.cssRules);
+        if (!r.style || !r.selectorText || !r.style.getPropertyValue(prop)) continue;
+        for (const sel of r.selectorText.split(",")) {
+          const t = sel.trim();
+          // body-level ones are covered separately; icons, emoji and code keep their fonts
+          if (!t || /^(:root|html|body)\b/.test(t) || /icon|emoji|code|pre\b|monospace/i.test(t)) continue;
+          out.add(t);
+        }
+      }
+    };
+    for (const ss of document.styleSheets) {
+      if (ss.ownerNode?.id?.startsWith("sdd-")) continue;
+      try {
+        walk(ss.cssRules);
+      } catch {}
+    }
+    const list = [...out];
+    selectorCache.set(key, list);
+    return list;
+  }
+  // "body.x a, body.x b, …" rather than :is(), so the browser can still index each one
+  const scoped = (scope, sels) => sels.map((x) => `${scope} ${x}`).join(",\n");
+  function fontRule(name, family, extra = "") {
+    const scope = `body.sdd-${name}`;
+    const sels = [scope, `${scope} :is(button, input, textarea, select)`, scoped(scope, slackSelectorsSetting("font-family"))].filter(Boolean).join(",\n");
+    return `${sels} { font-family: ${family} !important; ${extra} }`;
+  }
+
   function pickColor(name, p) {
     if (name.startsWith("--sk_")) {
       if (/primary_foreground|inverted_background/.test(name)) return triplet(p.fg);
@@ -693,10 +730,8 @@
     return null;
   }
 
-  const NOT_ICONS = ':not(.c-icon):not([class*="c-icon"]):not(i):not(.c-emoji):not(code):not(pre):not(code *):not(pre *)';
 
   const DOCS_CSS = `
-    body.sdd-docs, body.sdd-docs *${NOT_ICONS} { font-family: Arial, Helvetica, sans-serif !important; letter-spacing: normal !important; }
     body.sdd-docs .p-rich_text_section, body.sdd-docs .c-message_kit__blocks .p-rich_text_block { line-height: 1.55 !important; }
     body.sdd-docs .p-rich_text_section a.c-link { color: #1155cc !important; text-decoration: underline !important; }
     body.sdd-docs .p-view_contents--sidebar { border-right: 1px solid var(--sdd-border) !important; }
@@ -708,8 +743,11 @@
   `;
 
   const VALORANT_CSS = `
-    body.sdd-valorant, body.sdd-valorant *${NOT_ICONS} { font-family: Bahnschrift, "DIN Next", "D-DIN", "Arial Narrow", sans-serif !important; }
-    body.sdd-valorant * { border-radius: 0 !important; }
+    /* sharp corners on the parts you see, rather than on every element */
+    body.sdd-valorant :is(button, input, textarea, select, img, .c-avatar, .c-base_icon, .c-button, .c-input_text, .c-select_input,
+      .c-wysiwyg_container, .c-texty_input, .ReactModal__Content, .c-popover__content, .c-menu, .c-message_attachment, .c-pillow_file_container,
+      .c-message_kit__file, .c-file_container, .c-reaction, .c-reaction_add, .c-tabs__tab, .p-top_nav__search, .p-channel_sidebar__channel,
+      .c-message_actions__container, .c-message_kit__background, .c-virtual_list__item, .c-search_autocomplete, .c-dialog__content) { border-radius: 0 !important; }
     body.sdd-valorant .c-avatar img, body.sdd-valorant .c-base_icon { border-radius: 0 !important; }
     body.sdd-valorant .c-message_kit__background, body.sdd-valorant .c-virtual_list__item { background-color: transparent; }
 
@@ -736,11 +774,6 @@
     /* keep a column for the right-hand panel (profiles, threads, details) when one is open */
     body.sdd-dashmode .p-client_workspace__tabpanel:has(.p-channel_sidebar__list):has(.p-view_contents--secondary) { grid-template-columns: 0 1fr 600px !important; }
     body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel:has(.p-channel_sidebar__list):has(.p-view_contents--secondary) { grid-template-columns: 300px 1fr 600px !important; }
-    body.sdd-dashmode .p-client_workspace_wrapper, body.sdd-dashmode .p-client_workspace_wrapper * {
-      --dt_color-base-pry: transparent !important; --dt_color-base-sec: transparent !important; --dt_color-base-ter: transparent !important;
-      --dt_color-theme-base-pry: transparent !important; --dt_color-theme-base-sec: transparent !important;
-      --dt_color-theme-surf-inv-sec: transparent !important; --dt_color-ctr-pry: transparent !important;
-    }
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-client_workspace, .p-client_workspace__layout, .p-view_header,
       .p-view_header--primary-background, .c-scrollbar__hider, .p-message_pane, .p-workspace__primary_view) { background: transparent !important; }
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-view_contents--primary, .p-view_contents--sidebar, .p-view_contents--secondary) {
@@ -931,13 +964,21 @@
         --sdd-acc: ${p.accent}; --sdd-accfg: ${p.accentFg}; --sdd-side: ${p.side};
         background: ${p.bg} !important; color: ${p.fg} !important;
       }
-      html:has(body.sdd-${name}), body.sdd-${name}, body.sdd-${name} * { color-scheme: ${p.light ? "light" : "dark"} !important; }
+      ${["html", "body", scoped(`body.sdd-${name}`, slackSelectorsSetting("color-scheme"))].filter(Boolean).join(",\n")} { color-scheme: ${p.light ? "light" : "dark"} !important; }
       body.sdd-${name} .p-theme_background { background: ${p.side} !important; filter: none !important; }
       body.sdd-${name} .p-theme_background::before, body.sdd-${name} .p-theme_background::after { display: none !important; }
       body.sdd-${name} .c-wysiwyg_container { --TextyTheme-wysiwyg-bg: ${p.bg}; background: ${p.bg} !important; border-color: ${p.border} !important; }
       body.sdd-${name} [data-qa-channel-sidebar-channel-is-selected="true"] { background: ${p.select} !important; color: ${p.selectFg} !important; }
       body.sdd-${name} [data-qa-channel-sidebar-channel-is-selected="true"] * { color: ${p.selectFg} !important; }
-      ${name === "terminal" ? `body.sdd-terminal, body.sdd-terminal *${NOT_ICONS} { font-family: "Cascadia Mono", Consolas, monospace !important; }` : ""}
+      ${name === "terminal" ? fontRule("terminal", '"Cascadia Mono", Consolas, monospace') : ""}
+      ${name === "docs" ? fontRule("docs", "Arial, Helvetica, sans-serif", "letter-spacing: normal !important;") : ""}
+      ${name === "valorant" ? fontRule("valorant", 'Bahnschrift, "DIN Next", "D-DIN", "Arial Narrow", sans-serif') : ""}
+      ${name === "valorant" ? `body.sdd-dashmode .p-client_workspace_wrapper,
+${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) => !/^(:root|html|body)\b/.test(x) && !x.startsWith("[style")))} {
+        --dt_color-base-pry: transparent !important; --dt_color-base-sec: transparent !important; --dt_color-base-ter: transparent !important;
+        --dt_color-theme-base-pry: transparent !important; --dt_color-theme-base-sec: transparent !important;
+        --dt_color-theme-surf-inv-sec: transparent !important; --dt_color-ctr-pry: transparent !important;
+      }` : ""}
       ${name === "paper" ? `body.sdd-paper .p-rich_text_section, body.sdd-paper .c-message_kit__blocks { font-family: Georgia, "Times New Roman", serif !important; font-size: 15.5px !important; }` : ""}
       ${name === "docs" ? DOCS_CSS : ""}
       ${name === "valorant" ? VALORANT_CSS : ""}
@@ -1117,7 +1158,7 @@
     if (!st.ok) {
       Object.assign(media, { title: "Play something on your computer", author: "Nothing playing", playing: false, time: 0, dur: 0 });
     } else {
-      Object.assign(media, { title: st.title || st.app || "Music", author: [st.artist, st.app].filter(Boolean).join(" Â· ") || "Now playing", time: st.time || 0, dur: st.dur || 0, playing: !!st.playing });
+      Object.assign(media, { title: st.title || st.app || "Music", author: [st.artist, st.app].filter(Boolean).join(" · ") || "Now playing", time: st.time || 0, dur: st.dur || 0, playing: !!st.playing });
     }
     renderMedia();
   }
@@ -1339,7 +1380,7 @@
           </div>
           <button type="button" data-act="panel">Sidebar</button>
           <div class="spaces">
-            <button type="button" data-act="spaces" aria-haspopup="menu">Spaces â–¾</button>
+            <button type="button" data-act="spaces" aria-haspopup="menu">Spaces ▾</button>
             <div class="menu" role="menu" hidden>${workspaceItems()}</div>
           </div>
           <button type="button" data-act="profile">Profile</button>
@@ -1350,10 +1391,10 @@
         <span class="tag">It's go time!</span>
         <h1>OODLIA JU</h1>
         <div class="role">Gappie // Burlington VT</div>
-        <p class="blurb">Checking the weather in Burlingtonâ€¦</p>
+        <p class="blurb">Checking the weather in Burlington…</p>
       </div>
       <div class="cards">
-        <div class="card now"><small class="np-by">Now playing</small><b class="np-title">â€¦</b></div>
+        <div class="card now"><small class="np-by">Now playing</small><b class="np-title">…</b></div>
         <button class="card" data-act="back" type="button"><small>${esc(todayLabel())}</small><b>Back to Slack</b></button>
       </div>
     </section>`);
@@ -1434,7 +1475,7 @@
     const lo = Math.round(j.daily.temperature_2m_min[0]);
     const sky = WEATHER[j.current.weather_code] ?? "mixed";
     const day = WEATHER[j.daily.weather_code[0]] ?? "mixed";
-    const text = `${now}Â°F and ${sky} in Burlington right now. Today: ${day}, high of ${hi}Â°, low of ${lo}Â°.`;
+    const text = `${now}°F and ${sky} in Burlington right now. Today: ${day}, high of ${hi}°, low of ${lo}°.`;
     weatherCache = { at: Date.now(), text };
     return text;
   }
@@ -1600,7 +1641,7 @@
     }
     [data-sdd-group] [data-qa^="channel_sidebar__section_heading_label"] { cursor: pointer; }
     [data-sdd-group] [data-qa^="section_heading_toggle_and_label"]::after {
-      content: "â–¾"; flex: none; align-self: center; margin-left: 6px; opacity: .55; font-size: 11px; line-height: 1; transition: transform .15s;
+      content: "▾"; flex: none; align-self: center; margin-left: 6px; opacity: .55; font-size: 11px; line-height: 1; transition: transform .15s;
     }
     [data-sdd-group="folded"] [data-qa^="section_heading_toggle_and_label"]::after { transform: rotate(-90deg); }
     #sdd-fab {
@@ -1672,7 +1713,7 @@
     #sdd-panel .vid-note { font-size: 11px; color: var(--fg2); min-height: 14px; }
     #sdd-panel details.ui { padding: 0 0 8px; }
     #sdd-panel details.ui summary { cursor: pointer; list-style: none; user-select: none; }
-    #sdd-panel details.ui summary::before { content: "â€º"; display: inline-block; width: 12px; transition: transform .15s; }
+    #sdd-panel details.ui summary::before { content: "›"; display: inline-block; width: 12px; transition: transform .15s; }
     #sdd-panel details.ui[open] summary::before { transform: rotate(90deg); }
     #sdd-panel details.ui .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
     #sdd-panel .ui-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; padding: 2px 18px 6px; }
@@ -1787,10 +1828,10 @@
       <div class="tools">
         <input type="search" placeholder="Filter sections and channels">
         <button class="btn" data-act="all">Show all</button>
-        <button class="btn" data-act="refresh" title="Reload from Slack">â†»</button>
+        <button class="btn" data-act="refresh" title="Reload from Slack">↻</button>
       </div>
-      <div class="list"><div class="status">Loadingâ€¦</div></div>
-      <footer>Ticked = shown in your sidebar. Click a â”€â”€ divider in your sidebar to fold its group. Ctrl+Alt+H opens this.</footer>
+      <div class="list"><div class="status">Loading…</div></div>
+      <footer>Ticked = shown in your sidebar. Click a ── divider in your sidebar to fold its group. Ctrl+Alt+H opens this.</footer>
     </aside>`);
     document.body.appendChild(panelEl);
 
@@ -1827,7 +1868,7 @@
 
   function renderUi() {
     const hiddenCount = UI_ITEMS.filter((i) => settings.hiddenUi[i.key]).length;
-    panelEl.querySelector(".ui .hint").textContent = hiddenCount ? `Â· ${hiddenCount} hidden` : "";
+    panelEl.querySelector(".ui .hint").textContent = hiddenCount ? `· ${hiddenCount} hidden` : "";
     panelEl.querySelector(".ui-groups").innerHTML = UI_GROUPS.map(
       (g) => `<div class="ui-group"><div class="ui-title">${esc(g.label)}</div>${g.items
         .map(
@@ -2057,7 +2098,7 @@
 
   async function refreshList(force) {
     const list = panelEl.querySelector(".list");
-    if (!currentData()?.sections) list.innerHTML = `<div class="status">Loading your sectionsâ€¦</div>`;
+    if (!currentData()?.sections) list.innerHTML = `<div class="status">Loading your sections…</div>`;
     try {
       await loadSections(true);
       renderList();
@@ -2069,10 +2110,10 @@
     }
   }
 
-  const ICONS = { channel: "#", private: "ðŸ”’", dm: "@", group: "ðŸ‘¥" };
+  const ICONS = { channel: "#", private: "🔒", dm: "@", group: "👥" };
 
   function sectionHtml(s, data, q) {
-    const chans = s.channels.map((c) => ({ id: c, ...(data.names[c] || { kind: "channel", label: "â€¦" }) }));
+    const chans = s.channels.map((c) => ({ id: c, ...(data.names[c] || { kind: "channel", label: "…" }) }));
     const secMatch = !q || s.name.toLowerCase().includes(q);
     const shown = secMatch ? chans : chans.filter((c) => c.label.toLowerCase().includes(q));
     if (!secMatch && !shown.length) return "";
@@ -2085,7 +2126,7 @@
         <input type="checkbox" ${secOn ? "checked" : ""} data-partial="${secOn && hiddenCount ? 1 : ""}">
         <span class="name">${esc(s.name)}</span>
         <span class="count">${hiddenCount ? `${chans.length - hiddenCount}/` : ""}${s.total}</span>
-        ${chans.length ? `<button class="caret" title="Show channels">â€º</button>` : `<span class="caret"></span>`}
+        ${chans.length ? `<button class="caret" title="Show channels">›</button>` : `<span class="caret"></span>`}
       </div>
       <div class="chans">${shown
         .map((c) => {
@@ -2133,7 +2174,7 @@
             <span class="name" title="${esc(d.name)}">${esc(label)}</span>
             <button class="fold ${folded ? "on" : ""}" title="Fold this group in your sidebar (same as clicking the divider there)">${folded ? "folded" : "fold"}</button>
             <span class="count">${b.sections.length}</span>
-            ${b.sections.length ? `<button class="caret" title="Show sections">â€º</button>` : `<span class="caret"></span>`}
+            ${b.sections.length ? `<button class="caret" title="Show sections">›</button>` : `<span class="caret"></span>`}
           </div>
           <div class="grp-body">${inner}</div>
         </div>`;
