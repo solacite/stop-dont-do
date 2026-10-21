@@ -187,6 +187,13 @@ async function handleBridge(payload, send) {
     return;
   }
   const reply = (result) => send("Runtime.evaluate", { expression: `window.__sddBridgeReply?.(${JSON.stringify({ id: msg.id, result })})` }).catch(() => {});
+  // a few of slack's own keyboard shortcuts, for pages that may not have a rail tab
+  const SHORTCUTS = { todos: { key: "5", code: "Digit5", vk: 53, modifiers: 2 | 8 } }; // ctrl+shift+5
+  if (msg.cmd === "shortcut" && SHORTCUTS[msg.name]) {
+    const k = SHORTCUTS[msg.name];
+    for (const type of ["rawKeyDown", "keyUp"]) await send("Input.dispatchKeyEvent", { type, key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk, modifiers: k.modifiers });
+    return reply(true);
+  }
   if (msg.cmd === "jump" && typeof msg.name === "string") {
     // open a channel through slack's quick switcher: ctrl+k, its name, enter. slack only
     // takes real key presses for this, which the page itself can't make.

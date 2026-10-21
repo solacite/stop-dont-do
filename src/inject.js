@@ -200,7 +200,7 @@
         { key: "wsSwitcher", label: "Workspace switcher", css: ".p-workspace_switcher_container__button" },
         { key: "history", label: "Back, forward & history", css: '[data-qa="history_back_button"], [data-qa="history_forward_button"], [data-qa="top-nav-history-menu"]' },
         { key: "agents", label: "Agents", find: () => [document.querySelector('button[aria-label="More agents"]')?.parentElement] },
-        { key: "help", label: "Help (?)", css: ".p-top_nav__help" },
+        { key: "help", label: "Help (?)", css: ".p-top_nav__help, .p-top_nav__help__badge" },
       ],
     },
     {
@@ -1549,7 +1549,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
         if (!homeOpen) openHome();
       } else if (b.dataset.tab) {
         closeHome();
-        document.querySelector(`[data-qa="${b.dataset.tab}"]`)?.click();
+        openRailTab(b.dataset.tab, b.textContent.trim());
         setTimeout(markNav, 300);
       } else if (b.dataset.act === "channels") toggleDrawer();
       else if (b.dataset.act === "panel") togglePanel();
@@ -1604,6 +1604,24 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     const text = `${now}°F and ${sky} in Burlington right now. Today: ${day}, high of ${hi}°, low of ${lo}°.`;
     weatherCache = { at: Date.now(), text };
     return text;
+  }
+
+  // click one of slack's rail tabs. if you've moved it into slack's "more" menu (customize
+  // navigation bar), use its keyboard shortcut instead (the launcher presses it), and only
+  // as a last resort pick it out of the "more" menu.
+  const RAIL_SHORTCUTS = { tab_rail_later_button: "todos" };
+  async function openRailTab(qa, label) {
+    const tab = document.querySelector(`[data-qa="${qa}"]`);
+    if (tab) return tab.click();
+    if (RAIL_SHORTCUTS[qa] && typeof window.sddBridge === "function") return bridge(null, { name: RAIL_SHORTCUTS[qa] }, "shortcut");
+    const more = document.querySelector('[data-qa="tab_rail_browse_button"]');
+    if (!more) return;
+    more.click();
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      const item = [...document.querySelectorAll('.ReactModal__Content [data-qa="menu_item_button"]')].find((el) => el.textContent.trim().toLowerCase().startsWith(label.toLowerCase()));
+      if (item) return item.click();
+    }
   }
 
   // the workspaces you're signed into, one per name (an org and its workspace share one)
@@ -1714,7 +1732,9 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     const active = document.querySelector(".p-tab_rail__button--active[data-qa]")?.getAttribute("data-qa");
     for (const b of homeEl.querySelectorAll(".nav > button")) {
       const tab = b.dataset.tab || (b.dataset.act === "channels" ? "tab_rail_home_button" : null);
-      const on = homeOpen ? b.dataset.act === "dash" : !!active && tab === active;
+      // to-dos may live in slack's "more" menu, in which case only the address says you're there
+      const onTodos = tab === "tab_rail_later_button" && location.pathname.split("/")[3] === "to-dos";
+      const on = homeOpen ? b.dataset.act === "dash" : onTodos || (!!active && tab === active);
       b.classList.toggle("on", on);
       // copy slack's unread count (or unread dot) from the matching rail tab
       const rail = tab && document.querySelector(`[data-qa="${tab}"]`);
