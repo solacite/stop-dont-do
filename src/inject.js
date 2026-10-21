@@ -476,6 +476,39 @@
       setMark(tp, "data-sdd-secondary", !!tp.querySelector(".p-view_contents--secondary"));
       for (const side of tp.querySelectorAll(".p-view_contents--sidebar")) setMark(side, "data-sdd-chanpane", !!list && side.contains(list));
     }
+    fitPanes();
+  }
+
+  // slack writes the pane widths into a <style> of its own, in px worked out as if the left rail
+  // were there. in dash mode the rail is gone, so with a thread or profile open a strip the rail's
+  // width sat empty on the right. this copies slack's columns with the message column made
+  // flexible, and follows along whenever slack rewrites them (resizing, opening a panel).
+  let paneSrc = null;
+  let paneObs = null;
+  let paneStyle = null;
+  function fitPanes() {
+    if (!paneSrc?.isConnected) {
+      paneObs?.disconnect();
+      paneSrc = [...document.querySelectorAll("style")].find((el) => el.textContent.includes(".p-client_workspace__tabpanel {"));
+      if (!paneSrc) return;
+      paneObs = new MutationObserver(writePaneCss);
+      paneObs.observe(paneSrc, { childList: true, characterData: true, subtree: true });
+      writePaneCss();
+    }
+  }
+  function writePaneCss() {
+    const m = paneSrc.textContent.match(/client_workspace__tabpanel\s*\{[^}]*grid-template-columns:\s*([^;]+);[^}]*grid-template-areas:\s*['"]([^'"]+)['"]/);
+    let css = "";
+    if (m) {
+      const cols = m[1].trim().split(/\s+/);
+      const at = m[2].trim().split(/\s+/).indexOf("p-view_contents--primary");
+      if (at >= 0 && cols.length > 1 && cols[at] !== "auto") {
+        cols[at] = "minmax(0, 1fr)";
+        css = `body.sdd-dashmode .p-ia4_client .p-client_workspace__tabpanel { grid-template-columns: ${cols.join(" ")} !important; }`;
+      }
+    }
+    paneStyle ||= document.head.appendChild(Object.assign(document.createElement("style"), { id: "sdd-panes" }));
+    if (paneStyle.textContent !== css) paneStyle.textContent = css;
   }
 
   // a plain css backstop for anything the layout pass hasn't reached yet
@@ -496,6 +529,7 @@
     hideStyle.textContent = sels.length ? `${sels.join(",\n")} { display: none !important; }` : "";
   }
   cleanups.push(() => hideStyle?.remove());
+  cleanups.push(() => (paneObs?.disconnect(), paneStyle?.remove()));
 
   // clicking a "──" divider in the sidebar folds the sections under it
   function onSidebarClick(e) {
@@ -775,6 +809,9 @@
       .c-message_kit__file, .c-file_container, .c-reaction, .c-reaction_add, .c-tabs__tab, .p-top_nav__search, .p-channel_sidebar__channel,
       .c-message_actions__container, .c-message_kit__background, .c-virtual_list__item, .c-search_autocomplete, .c-dialog__content) { border-radius: 0 !important; }
     body.sdd-valorant .c-avatar img, body.sdd-valorant .c-base_icon { border-radius: 0 !important; }
+    /* slack's floating audio player sits over the messages, so it needs a solid backing */
+    body.sdd-valorant [class*="audioOnly__"] { background: var(--sdd-bg, #0f1923) !important; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+    body.sdd-valorant .c-audio_player--pip { background: transparent !important; border: 0 !important; }
     body.sdd-valorant .c-message_kit__background, body.sdd-valorant .c-virtual_list__item { background-color: transparent; }
 
     /* while dash is open, slack's own selected tab steps back */
@@ -785,10 +822,6 @@
     body.sdd-dashmode [data-sdd-rail], body.sdd-dashmode .p-control_strip { display: none !important; }
     /* the wrapper is a grid with a fixed column for the rail; give that space back */
     body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
-    /* slack sizes the message column in px as if the rail were there, which left a strip empty to the
-       right of an open thread or profile; let that column take whatever's left instead */
-    body.sdd-dashmode [class*="tabpanelSidebarPrimarySecondary__"] { grid-template-columns: var(--ia4-layout-sidebar-width) minmax(0, 1fr) var(--ia4-layout-secondary-width) !important; }
-    body.sdd-dashmode [class*="tabpanelPrimarySecondary__"] { grid-template-columns: minmax(0, 1fr) var(--ia4-layout-secondary-width) !important; }
     body.sdd-dashmode .p-client_workspace_wrapper {
       margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
     }
