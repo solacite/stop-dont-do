@@ -1183,6 +1183,64 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
   window.addEventListener("message", onSpotifyMessage);
   cleanups.push(() => window.removeEventListener("message", onSpotifyMessage));
 
+  // ---- activity: mentions in channels you've hidden. slack still counts them (the
+  // taskbar badge) but you'd never see them, so list them at the top of activity.
+  const hiddenMentions = { at: 0, ws: null, items: [], loading: false };
+  function channelHidden(id, data) {
+    if (settings.hiddenChannels[id]) return true;
+    const sec = data?.sections.find((x) => x.channels.includes(id));
+    return !!sec && isSectionHidden(sec.id);
+  }
+  async function refreshHiddenMentions() {
+    const ws = location.pathname.split("/")[2];
+    if (hiddenMentions.loading || (hiddenMentions.ws === ws && Date.now() - hiddenMentions.at < 30000)) return;
+    hiddenMentions.loading = true;
+    try {
+      const data = await loadSections(false);
+      const c = await api("client.counts");
+      const ids = [...(c.channels || []), ...(c.mpims || [])].filter((x) => x.mention_count > 0 && channelHidden(x.id, data));
+      const info = ids.length
+        ? await api("conversations.genericInfo", { updated_channels: JSON.stringify(Object.fromEntries(ids.map((x) => [x.id, 0]))) })
+        : { channels: [] };
+      hiddenMentions.items = ids.map((x) => {
+        const ch = (info.channels || []).find((y) => y.id === x.id);
+        const sec = data.sections.find((y) => y.channels.includes(x.id));
+        return { id: x.id, name: ch?.name || x.id, mentions: x.mention_count, section: sec ? groupLabel(sec.name) : "" };
+      });
+      Object.assign(hiddenMentions, { at: Date.now(), ws });
+    } catch {
+      hiddenMentions.at = Date.now();
+    } finally {
+      hiddenMentions.loading = false;
+    }
+    renderHiddenMentions();
+  }
+  function renderHiddenMentions() {
+    const onActivity = document.querySelector('[data-qa="tab_rail_activity_button"]')?.classList.contains("p-tab_rail__button--active");
+    const host = onActivity && [...document.querySelectorAll(".p-view_sidebar--list")].find((e) => e.querySelector(".p-activity_ia4_page"));
+    let box = document.getElementById("sdd-hidden-mentions");
+    if (!host || !hiddenMentions.items.length) return box?.remove();
+    if (!box || box.parentElement !== host) {
+      box?.remove();
+      box = h(`<div id="sdd-hidden-mentions"></div>`);
+      box.addEventListener("click", (e) => {
+        const row = e.target.closest("[data-name]");
+        if (!row) return;
+        bridge(null, { name: row.dataset.name }, "jump");
+        // opening it reads the mentions; drop it from the list right away
+        hiddenMentions.items = hiddenMentions.items.filter((x) => x.name !== row.dataset.name);
+        hiddenMentions.at = Date.now() - 25000;
+        renderHiddenMentions();
+      });
+      host.querySelector(".p-activity_ia4_page")?.before(box);
+    }
+    const html = `<div class="hm-title">From sections you've hidden</div>${hiddenMentions.items
+      .map((x) => `<button type="button" class="hm-row" data-name="${esc(x.name)}"><span class="hm-name"># ${esc(x.name)}</span><span class="hm-sec">${esc(x.section)}</span><span class="hm-count">${x.mentions}</span></button>`)
+      .join("")}`;
+    if (box.innerHTML !== html) box.innerHTML = html;
+  }
+  cleanups.push(() => document.getElementById("sdd-hidden-mentions")?.remove());
+
   // decoding a sharp video costs a lot, so only pay for it when it's actually seen:
   // 1080p on the dash, 720p behind the frosted glass, lowest when hidden (sound is the same)
   let qualitySet = { q: null, at: 0 };
@@ -1594,6 +1652,8 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     if (settings.theme === "valorant") updateVideoAccent();
     pollApp();
     tuneVideoQuality();
+    refreshHiddenMentions();
+    renderHiddenMentions();
     markRail();
     document.body.classList.toggle("sdd-dashmode", dashMode());
     document.body.classList.toggle("sdd-novideo", homeEnabled() && !!settings.hideVideo);
@@ -1625,6 +1685,18 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
 
   const PANEL_CSS = `
     [data-sdd-hide] { display: none !important; }
+    #sdd-hidden-mentions { margin: 4px 12px 8px; padding: 8px 0 4px; border-bottom: 1px solid rgba(127,127,127,.25); }
+    #sdd-hidden-mentions .hm-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .65; padding: 0 6px 4px; }
+    #sdd-hidden-mentions .hm-row {
+      display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    }
+    #sdd-hidden-mentions .hm-row:hover { background: rgba(127,127,127,.15); }
+    #sdd-hidden-mentions .hm-name { font-weight: 600; flex: none; }
+    #sdd-hidden-mentions .hm-sec { flex: 1; min-width: 0; opacity: .6; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #sdd-hidden-mentions .hm-count {
+      flex: none; min-width: 20px; padding: 0 6px; border-radius: 999px; text-align: center; font-size: 12px; font-weight: 700; line-height: 18px;
+      background: var(--sdd-acc, #e01e5a); color: var(--sdd-accfg, #fff);
+    }
     [data-sdd-noscroll] .c-scrollbar__track, [data-sdd-noscroll] .c-scrollbar__bar { display: none !important; }
     [data-sdd-quiet] .p-channel_sidebar__section_heading,
     [data-sdd-quiet] .p-channel_sidebar__section_heading *,
