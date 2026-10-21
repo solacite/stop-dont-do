@@ -1215,11 +1215,57 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     }
     renderHiddenMentions();
   }
+  // a "hidden" tab after slack's DMs tab in activity. picking it swaps slack's feed for
+  // the list; picking any of slack's own tabs (or leaving activity) swaps back.
+  const HIDDEN_ICON = `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.3"/><path d="M3.5 16.5l13-13"/></svg>`;
+  let hiddenView = false;
+  function setHiddenView(on) {
+    hiddenView = on;
+    document.body.classList.toggle("sdd-hidden-view", on);
+    const tab = document.querySelector("#sdd-hidden-tab button");
+    tab?.classList.toggle("c-tabs__tab--active", on);
+    tab?.setAttribute("aria-selected", String(on));
+    renderHiddenMentions();
+  }
+  function onActivityTabClick(e) {
+    if (!hiddenView) return;
+    if (e.target.closest('[data-qa^="activity-saved-view-tab-"], [data-qa^="tab_rail_"], #sdd-home .nav > button')) setHiddenView(false);
+  }
+  document.addEventListener("click", onActivityTabClick, true);
+
   function renderHiddenMentions() {
     const onActivity = document.querySelector('[data-qa="tab_rail_activity_button"]')?.classList.contains("p-tab_rail__button--active");
+    if (!onActivity && hiddenView) setHiddenView(false);
+    // the tab, copied from slack's DMs tab so it matches
+    const dms = onActivity && document.querySelector('[data-qa="activity-saved-view-tab-dms"]');
+    let tabHolder = document.getElementById("sdd-hidden-tab");
+    if (dms && (!tabHolder || !tabHolder.isConnected)) {
+      const wrap = dms.closest('[class*="draggable_tab"]') || dms;
+      tabHolder = wrap.cloneNode(true);
+      tabHolder.id = "sdd-hidden-tab";
+      const btn = tabHolder.querySelector("button") || tabHolder;
+      btn.removeAttribute("data-qa");
+      btn.classList.remove("c-tabs__tab--active");
+      btn.setAttribute("aria-selected", "false");
+      const svg = btn.querySelector("svg");
+      if (svg) svg.outerHTML = HIDDEN_ICON;
+      const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT);
+      for (let n, done = false; (n = walker.nextNode()); ) if (n.nodeValue.trim()) (n.nodeValue = done ? "" : "Hidden"), (done = true);
+      btn.insertAdjacentHTML("beforeend", `<span class="sdd-hidden-count"></span>`);
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setHiddenView(!hiddenView);
+      });
+      wrap.after(tabHolder);
+    }
+    const total = hiddenMentions.items.reduce((n, x) => n + x.mentions, 0);
+    const count = tabHolder?.querySelector(".sdd-hidden-count");
+    if (count && count.textContent !== (total ? String(total) : "")) count.textContent = total ? String(total) : "";
+
+    // the list, in place of slack's feed while the tab is picked
     const host = onActivity && [...document.querySelectorAll(".p-view_sidebar--list")].find((e) => e.querySelector(".p-activity_ia4_page"));
     let box = document.getElementById("sdd-hidden-mentions");
-    if (!host || !hiddenMentions.items.length) return box?.remove();
+    if (!host || !hiddenView) return box?.remove();
     if (!box || box.parentElement !== host) {
       box?.remove();
       box = h(`<div id="sdd-hidden-mentions"></div>`);
@@ -1234,12 +1280,19 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
       });
       host.querySelector(".p-activity_ia4_page")?.before(box);
     }
-    const html = `<div class="hm-title">From sections you've hidden</div>${hiddenMentions.items
-      .map((x) => `<button type="button" class="hm-row" data-name="${esc(x.name)}"><span class="hm-name"># ${esc(x.name)}</span><span class="hm-sec">${esc(x.section)}</span><span class="hm-count">${x.mentions}</span></button>`)
-      .join("")}`;
+    const html = hiddenMentions.items.length
+      ? hiddenMentions.items
+          .map((x) => `<button type="button" class="hm-row" data-name="${esc(x.name)}"><span class="hm-name"># ${esc(x.name)}</span><span class="hm-sec">${esc(x.section)}</span><span class="hm-count">${x.mentions}</span></button>`)
+          .join("")
+      : `<div class="hm-empty">No mentions in the sections you've hidden.</div>`;
     if (box.innerHTML !== html) box.innerHTML = html;
   }
-  cleanups.push(() => document.getElementById("sdd-hidden-mentions")?.remove());
+  cleanups.push(() => {
+    document.removeEventListener("click", onActivityTabClick, true);
+    document.body.classList.remove("sdd-hidden-view");
+    document.getElementById("sdd-hidden-mentions")?.remove();
+    document.getElementById("sdd-hidden-tab")?.remove();
+  });
 
   // decoding a sharp video costs a lot, so only pay for it when it's actually seen:
   // 1080p on the dash, 720p behind the frosted glass, lowest when hidden (sound is the same)
@@ -1685,8 +1738,13 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
 
   const PANEL_CSS = `
     [data-sdd-hide] { display: none !important; }
-    #sdd-hidden-mentions { margin: 4px 12px 8px; padding: 8px 0 4px; border-bottom: 1px solid rgba(127,127,127,.25); }
-    #sdd-hidden-mentions .hm-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .65; padding: 0 6px 4px; }
+    /* activity's "hidden" tab: its list stands in for slack's feed */
+    body.sdd-hidden-view .p-activity_ia4_page { display: none !important; }
+    body.sdd-hidden-view [data-qa^="activity-saved-view-tab-"].c-tabs__tab--active { box-shadow: none !important; color: inherit !important; opacity: .7; }
+    body.sdd-hidden-view [data-qa^="activity-saved-view-tab-"].c-tabs__tab--active::after { display: none !important; }
+    #sdd-hidden-tab .sdd-hidden-count:not(:empty) { margin-left: 4px; color: color-mix(in srgb, var(--sdd-acc, #e01e5a) 75%, #ffffff); font-weight: 700; }
+    #sdd-hidden-mentions { margin: 4px 12px 8px; padding: 4px 0; overflow-y: auto; }
+    #sdd-hidden-mentions .hm-empty { padding: 16px 6px; opacity: .6; }
     #sdd-hidden-mentions .hm-row {
       display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
     }
