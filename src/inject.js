@@ -447,10 +447,27 @@
   // switch workspaces, etc. catch the new one the moment it appears.
   const mountObserver = new MutationObserver(() => {
     if (applying) return;
+    markPanes();
     const list = document.querySelector(".p-channel_sidebar__list .c-virtual_list__scroll_container");
     if (list && list !== observedList) layoutSidebar();
   });
-  cleanups.push(() => mountObserver.disconnect());
+  cleanups.push(() => {
+    mountObserver.disconnect();
+    for (const a of ["data-sdd-home", "data-sdd-secondary", "data-sdd-chanpane"]) document.querySelectorAll(`[${a}]`).forEach((el) => el.removeAttribute(a));
+  });
+
+  // mark slack's panels once (home tab, its channel-list pane, an open right-hand panel)
+  // so the dash-mode css can read a plain attribute instead of :has(), which the browser
+  // re-asks over the whole page on every tab switch
+  const setMark = (el, name, on) => el && el.hasAttribute(name) !== on && el.toggleAttribute(name, on);
+  function markPanes() {
+    for (const tp of document.querySelectorAll(".p-client_workspace__tabpanel")) {
+      const list = tp.querySelector(".p-channel_sidebar__list");
+      setMark(tp, "data-sdd-home", !!list);
+      setMark(tp, "data-sdd-secondary", !!tp.querySelector(".p-view_contents--secondary"));
+      for (const side of tp.querySelectorAll(".p-view_contents--sidebar")) setMark(side, "data-sdd-chanpane", !!list && side.contains(list));
+    }
+  }
 
   // a plain css backstop for anything the layout pass hasn't reached yet
   let hideStyle = null;
@@ -759,9 +776,9 @@
     body.sdd-dashmode [data-sdd-rail], body.sdd-dashmode .p-control_strip { display: none !important; }
     /* the wrapper is a grid with a fixed column for the rail; give that space back */
     body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
-    body.sdd-dashmode .p-view_contents--sidebar:has(.p-channel_sidebar__list) { display: none !important; }
+    body.sdd-dashmode .p-view_contents--sidebar[data-sdd-chanpane] { display: none !important; }
     /* home's grid still reserves the channel list's column, so hand it to the channel view */
-    body.sdd-dashmode .p-client_workspace__tabpanel:has(.p-channel_sidebar__list) { grid-template-columns: 0 1fr !important; }
+    body.sdd-dashmode .p-client_workspace__tabpanel[data-sdd-home] { grid-template-columns: 0 1fr !important; }
     body.sdd-dashmode .p-client_workspace_wrapper {
       margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
     }
@@ -769,11 +786,11 @@
     /* slack's menus, pop-ups and the emoji picker open on body; keep them above the raised panes */
     body.sdd-dashmode :is(.ReactModal__Overlay, .c-popover, .c-tooltip, .ReactModalPortal > div, .c-toast, [class*="toast__"], .p-download_modal, .p-downloads_modal) { z-index: 9400 !important; }
     /* the channels tab: bring the channel list back as a sidebar until you pick one */
-    body.sdd-dashmode.sdd-drawer .p-view_contents--sidebar:has(.p-channel_sidebar__list) { display: flex !important; }
-    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel:has(.p-channel_sidebar__list) { grid-template-columns: 300px 1fr !important; }
+    body.sdd-dashmode.sdd-drawer .p-view_contents--sidebar[data-sdd-chanpane] { display: flex !important; }
+    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel[data-sdd-home] { grid-template-columns: 300px 1fr !important; }
     /* keep a column for the right-hand panel (profiles, threads, details) when one is open */
-    body.sdd-dashmode .p-client_workspace__tabpanel:has(.p-channel_sidebar__list):has(.p-view_contents--secondary) { grid-template-columns: 0 1fr 600px !important; }
-    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel:has(.p-channel_sidebar__list):has(.p-view_contents--secondary) { grid-template-columns: 300px 1fr 600px !important; }
+    body.sdd-dashmode .p-client_workspace__tabpanel[data-sdd-home][data-sdd-secondary] { grid-template-columns: 0 1fr 600px !important; }
+    body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel[data-sdd-home][data-sdd-secondary] { grid-template-columns: 300px 1fr 600px !important; }
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-client_workspace, .p-client_workspace__layout, .p-view_header,
       .p-view_header--primary-background, .c-scrollbar__hider, .p-message_pane, .p-workspace__primary_view) { background: transparent !important; }
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-view_contents--primary, .p-view_contents--sidebar, .p-view_contents--secondary) {
@@ -2215,6 +2232,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     applyTheme();
     applyUi();
     updateHideCss();
+    markPanes();
     layoutSidebar();
     mountObserver.observe(document.body, { childList: true, subtree: true });
     loadSections(false).then(() => (updateHideCss(), scheduleLayout()), () => {});
