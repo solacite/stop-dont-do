@@ -99,7 +99,8 @@ const YT_TWEAK = `(() => {
       p.setOption("captions", "track", {});
     } catch {}
     try {
-      const best = (p.getAvailableQualityLevels() || []).find((q) => q !== "auto");
+      // 1080p at most; the page lowers it further when the video is behind glass or hidden
+      const best = (p.getAvailableQualityLevels() || []).find((q) => ["hd1080", "hd720", "large"].includes(q));
       if (best) { p.setPlaybackQualityRange(best, best); p.setPlaybackQuality?.(best); }
     } catch {}
     // autoplay sometimes doesn't start on its own; nudge it (muted, so it's allowed)

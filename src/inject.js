@@ -1,4 +1,4 @@
-// stop dont do: runs inside the slack client (app.slack.com).
+﻿// stop dont do: runs inside the slack client (app.slack.com).
 // adds a panel to show/hide sidebar sections and channels, plus themes.
 (() => {
   if (window.__sdd) window.__sdd.destroy();
@@ -63,9 +63,9 @@
     agents: "Agents",
   };
 
-  // sections whose names start with dashes ("── .✦ events") act as group headers
-  const DIVIDER = /^\s*[-─—–━═_~]/;
-  const groupLabel = (name) => name.replace(/^[\s\-─—–━═_~.✦·•*|>:]+/, "").trim() || name;
+  // sections whose names start with dashes ("â”€â”€ .âœ¦ events") act as group headers
+  const DIVIDER = /^\s*[-â”€â€”â€“â”â•_~]/;
+  const groupLabel = (name) => name.replace(/^[\s\-â”€â€”â€“â”â•_~.âœ¦Â·â€¢*|>:]+/, "").trim() || name;
 
   const cache = {}; // workspace id -> { sections, groupOf, names }
 
@@ -118,7 +118,7 @@
         const { channels } = await api("conversations.genericInfo", { updated_channels: JSON.stringify(batch) });
         for (const c of channels || []) {
           if (c.is_im) {
-            names[c.id] = { kind: "dm", label: "…" };
+            names[c.id] = { kind: "dm", label: "â€¦" };
             users.set(c.id, c.user);
           } else if (c.is_mpim) {
             const people = (c.name || "").replace(/^mpdm-|-\d+$/g, "").split("--");
@@ -196,7 +196,7 @@
     {
       label: "Top bar",
       items: [
-        { key: "appMenu", label: "Menu (☰)", css: '[data-qa="windows-titlebar-app-menu"]' },
+        { key: "appMenu", label: "Menu (â˜°)", css: '[data-qa="windows-titlebar-app-menu"]' },
         { key: "wsSwitcher", label: "Workspace switcher", css: ".p-workspace_switcher_container__button" },
         { key: "history", label: "Back, forward & history", css: '[data-qa="history_back_button"], [data-qa="history_forward_button"], [data-qa="top-nav-history-menu"]' },
         { key: "agents", label: "Agents", find: () => [document.querySelector('button[aria-label="More agents"]')?.parentElement] },
@@ -472,7 +472,7 @@
   }
   cleanups.push(() => hideStyle?.remove());
 
-  // clicking a "──" divider in the sidebar folds the sections under it
+  // clicking a "â”€â”€" divider in the sidebar folds the sections under it
   function onSidebarClick(e) {
     const heading = e.target.closest?.('.p-channel_sidebar__list [data-sdd-group]');
     if (!heading || e.target.closest("button:not([data-qa^='section_heading_toggle'])")) return;
@@ -729,7 +729,7 @@
     }
     body.sdd-dashmode.sdd-dash-open .p-client_workspace_wrapper { visibility: hidden; }
     /* slack's menus, pop-ups and the emoji picker open on body; keep them above the raised panes */
-    body.sdd-dashmode :is(.ReactModal__Overlay, .c-popover, .c-tooltip, .ReactModalPortal > div) { z-index: 9400 !important; }
+    body.sdd-dashmode :is(.ReactModal__Overlay, .c-popover, .c-tooltip, .ReactModalPortal > div, .c-toast, [class*="toast__"], .p-download_modal, .p-downloads_modal) { z-index: 9400 !important; }
     /* the channels tab: bring the channel list back as a sidebar until you pick one */
     body.sdd-dashmode.sdd-drawer .p-view_contents--sidebar:has(.p-channel_sidebar__list) { display: flex !important; }
     body.sdd-dashmode.sdd-drawer .p-client_workspace__tabpanel:has(.p-channel_sidebar__list) { grid-template-columns: 300px 1fr !important; }
@@ -744,7 +744,7 @@
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-client_workspace, .p-client_workspace__layout, .p-view_header,
       .p-view_header--primary-background, .c-scrollbar__hider, .p-message_pane, .p-workspace__primary_view) { background: transparent !important; }
     body.sdd-dashmode .p-client_workspace_wrapper :is(.p-view_contents--primary, .p-view_contents--sidebar, .p-view_contents--secondary) {
-      background: rgba(15, 25, 35, .42) !important; backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);
+      background: rgba(15, 25, 35, .5) !important; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       border: 1px solid rgba(236, 232, 225, .12) !important;
     }
     body.sdd-dashmode .p-client_workspace_wrapper .c-wysiwyg_container { background: rgba(15, 25, 35, .55) !important; }
@@ -1117,12 +1117,12 @@
     if (!st.ok) {
       Object.assign(media, { title: "Play something on your computer", author: "Nothing playing", playing: false, time: 0, dur: 0 });
     } else {
-      Object.assign(media, { title: st.title || st.app || "Music", author: [st.artist, st.app].filter(Boolean).join(" · ") || "Now playing", time: st.time || 0, dur: st.dur || 0, playing: !!st.playing });
+      Object.assign(media, { title: st.title || st.app || "Music", author: [st.artist, st.app].filter(Boolean).join(" Â· ") || "Now playing", time: st.time || 0, dur: st.dur || 0, playing: !!st.playing });
     }
     renderMedia();
   }
   async function pollApp(force) {
-    if (!useApp() || !homeEl || appBusy || (!force && Date.now() - appLast < 1000)) return;
+    if (!useApp() || !homeEl || appBusy || (!force && Date.now() - appLast < 2000)) return;
     appBusy = true;
     appLast = Date.now();
     try {
@@ -1133,6 +1133,20 @@
   }
   window.addEventListener("message", onSpotifyMessage);
   cleanups.push(() => window.removeEventListener("message", onSpotifyMessage));
+
+  // decoding a sharp video costs a lot, so only pay for it when it's actually seen:
+  // 1080p on the dash, 720p behind the frosted glass, lowest when hidden (sound is the same)
+  let qualitySet = { q: null, at: 0 };
+  function tuneVideoQuality() {
+    if (!homeEl || !ytFrame()) return;
+    const hidden = !!settings.hideVideo || (!homeOpen && !homeEl.classList.contains("bg"));
+    const q = hidden ? "tiny" : homeOpen ? "hd1080" : "hd720";
+    // re-send now and then: the launcher picks its own quality while the player loads
+    if (q === qualitySet.q && Date.now() - qualitySet.at < 5000) return;
+    qualitySet = { q, at: Date.now() };
+    ytCmd("setPlaybackQualityRange", [q, q]);
+    ytCmd("setPlaybackQuality", [q]);
+  }
 
   function renderMedia() {
     if (!homeEl) return;
@@ -1325,7 +1339,7 @@
           </div>
           <button type="button" data-act="panel">Sidebar</button>
           <div class="spaces">
-            <button type="button" data-act="spaces" aria-haspopup="menu">Spaces ▾</button>
+            <button type="button" data-act="spaces" aria-haspopup="menu">Spaces â–¾</button>
             <div class="menu" role="menu" hidden>${workspaceItems()}</div>
           </div>
           <button type="button" data-act="profile">Profile</button>
@@ -1336,10 +1350,10 @@
         <span class="tag">It's go time!</span>
         <h1>OODLIA JU</h1>
         <div class="role">Gappie // Burlington VT</div>
-        <p class="blurb">Checking the weather in Burlington…</p>
+        <p class="blurb">Checking the weather in Burlingtonâ€¦</p>
       </div>
       <div class="cards">
-        <div class="card now"><small class="np-by">Now playing</small><b class="np-title">…</b></div>
+        <div class="card now"><small class="np-by">Now playing</small><b class="np-title">â€¦</b></div>
         <button class="card" data-act="back" type="button"><small>${esc(todayLabel())}</small><b>Back to Slack</b></button>
       </div>
     </section>`);
@@ -1420,7 +1434,7 @@
     const lo = Math.round(j.daily.temperature_2m_min[0]);
     const sky = WEATHER[j.current.weather_code] ?? "mixed";
     const day = WEATHER[j.daily.weather_code[0]] ?? "mixed";
-    const text = `${now}°F and ${sky} in Burlington right now. Today: ${day}, high of ${hi}°, low of ${lo}°.`;
+    const text = `${now}Â°F and ${sky} in Burlington right now. Today: ${day}, high of ${hi}Â°, low of ${lo}Â°.`;
     weatherCache = { at: Date.now(), text };
     return text;
   }
@@ -1545,6 +1559,7 @@
     mountDash();
     if (settings.theme === "valorant") updateVideoAccent();
     pollApp();
+    tuneVideoQuality();
     markRail();
     document.body.classList.toggle("sdd-dashmode", dashMode());
     document.body.classList.toggle("sdd-novideo", homeEnabled() && !!settings.hideVideo);
@@ -1585,7 +1600,7 @@
     }
     [data-sdd-group] [data-qa^="channel_sidebar__section_heading_label"] { cursor: pointer; }
     [data-sdd-group] [data-qa^="section_heading_toggle_and_label"]::after {
-      content: "▾"; flex: none; align-self: center; margin-left: 6px; opacity: .55; font-size: 11px; line-height: 1; transition: transform .15s;
+      content: "â–¾"; flex: none; align-self: center; margin-left: 6px; opacity: .55; font-size: 11px; line-height: 1; transition: transform .15s;
     }
     [data-sdd-group="folded"] [data-qa^="section_heading_toggle_and_label"]::after { transform: rotate(-90deg); }
     #sdd-fab {
@@ -1657,7 +1672,7 @@
     #sdd-panel .vid-note { font-size: 11px; color: var(--fg2); min-height: 14px; }
     #sdd-panel details.ui { padding: 0 0 8px; }
     #sdd-panel details.ui summary { cursor: pointer; list-style: none; user-select: none; }
-    #sdd-panel details.ui summary::before { content: "›"; display: inline-block; width: 12px; transition: transform .15s; }
+    #sdd-panel details.ui summary::before { content: "â€º"; display: inline-block; width: 12px; transition: transform .15s; }
     #sdd-panel details.ui[open] summary::before { transform: rotate(90deg); }
     #sdd-panel details.ui .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
     #sdd-panel .ui-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; padding: 2px 18px 6px; }
@@ -1772,10 +1787,10 @@
       <div class="tools">
         <input type="search" placeholder="Filter sections and channels">
         <button class="btn" data-act="all">Show all</button>
-        <button class="btn" data-act="refresh" title="Reload from Slack">↻</button>
+        <button class="btn" data-act="refresh" title="Reload from Slack">â†»</button>
       </div>
-      <div class="list"><div class="status">Loading…</div></div>
-      <footer>Ticked = shown in your sidebar. Click a ── divider in your sidebar to fold its group. Ctrl+Alt+H opens this.</footer>
+      <div class="list"><div class="status">Loadingâ€¦</div></div>
+      <footer>Ticked = shown in your sidebar. Click a â”€â”€ divider in your sidebar to fold its group. Ctrl+Alt+H opens this.</footer>
     </aside>`);
     document.body.appendChild(panelEl);
 
@@ -1812,7 +1827,7 @@
 
   function renderUi() {
     const hiddenCount = UI_ITEMS.filter((i) => settings.hiddenUi[i.key]).length;
-    panelEl.querySelector(".ui .hint").textContent = hiddenCount ? `· ${hiddenCount} hidden` : "";
+    panelEl.querySelector(".ui .hint").textContent = hiddenCount ? `Â· ${hiddenCount} hidden` : "";
     panelEl.querySelector(".ui-groups").innerHTML = UI_GROUPS.map(
       (g) => `<div class="ui-group"><div class="ui-title">${esc(g.label)}</div>${g.items
         .map(
@@ -2042,7 +2057,7 @@
 
   async function refreshList(force) {
     const list = panelEl.querySelector(".list");
-    if (!currentData()?.sections) list.innerHTML = `<div class="status">Loading your sections…</div>`;
+    if (!currentData()?.sections) list.innerHTML = `<div class="status">Loading your sectionsâ€¦</div>`;
     try {
       await loadSections(true);
       renderList();
@@ -2054,10 +2069,10 @@
     }
   }
 
-  const ICONS = { channel: "#", private: "🔒", dm: "@", group: "👥" };
+  const ICONS = { channel: "#", private: "ðŸ”’", dm: "@", group: "ðŸ‘¥" };
 
   function sectionHtml(s, data, q) {
-    const chans = s.channels.map((c) => ({ id: c, ...(data.names[c] || { kind: "channel", label: "…" }) }));
+    const chans = s.channels.map((c) => ({ id: c, ...(data.names[c] || { kind: "channel", label: "â€¦" }) }));
     const secMatch = !q || s.name.toLowerCase().includes(q);
     const shown = secMatch ? chans : chans.filter((c) => c.label.toLowerCase().includes(q));
     if (!secMatch && !shown.length) return "";
@@ -2070,7 +2085,7 @@
         <input type="checkbox" ${secOn ? "checked" : ""} data-partial="${secOn && hiddenCount ? 1 : ""}">
         <span class="name">${esc(s.name)}</span>
         <span class="count">${hiddenCount ? `${chans.length - hiddenCount}/` : ""}${s.total}</span>
-        ${chans.length ? `<button class="caret" title="Show channels">›</button>` : `<span class="caret"></span>`}
+        ${chans.length ? `<button class="caret" title="Show channels">â€º</button>` : `<span class="caret"></span>`}
       </div>
       <div class="chans">${shown
         .map((c) => {
@@ -2118,7 +2133,7 @@
             <span class="name" title="${esc(d.name)}">${esc(label)}</span>
             <button class="fold ${folded ? "on" : ""}" title="Fold this group in your sidebar (same as clicking the divider there)">${folded ? "folded" : "fold"}</button>
             <span class="count">${b.sections.length}</span>
-            ${b.sections.length ? `<button class="caret" title="Show sections">›</button>` : `<span class="caret"></span>`}
+            ${b.sections.length ? `<button class="caret" title="Show sections">â€º</button>` : `<span class="caret"></span>`}
           </div>
           <div class="grp-body">${inner}</div>
         </div>`;
