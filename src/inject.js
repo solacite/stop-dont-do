@@ -438,18 +438,23 @@
       layoutSidebar();
     });
   };
-  // mutation callbacks run before the browser paints, so laying out right here
-  // means slack's unfiltered sidebar never reaches the screen
-  const sidebarObserver = new MutationObserver(() => applying || layoutSidebar());
+  // slack makes hundreds of small changes when you switch channels, so instead of
+  // reacting to each one, gather them and react once in the next frame. that still runs
+  // before the frame is painted, so slack's unfiltered sidebar never reaches the screen.
+  const sidebarObserver = new MutationObserver(() => applying || scheduleLayout());
   cleanups.push(() => sidebarObserver.disconnect());
 
   // slack throws the whole sidebar away and builds a new one when you go to home,
-  // switch workspaces, etc. catch the new one the moment it appears.
+  // switch workspaces, etc. catch the new one in the frame it appears.
+  let mountFrame = 0;
   const mountObserver = new MutationObserver(() => {
-    if (applying) return;
-    markPanes();
-    const list = document.querySelector(".p-channel_sidebar__list .c-virtual_list__scroll_container");
-    if (list && list !== observedList) layoutSidebar();
+    if (applying || mountFrame) return;
+    mountFrame = requestAnimationFrame(() => {
+      mountFrame = 0;
+      markPanes();
+      const list = document.querySelector(".p-channel_sidebar__list .c-virtual_list__scroll_container");
+      if (list && list !== observedList) layoutSidebar();
+    });
   });
   cleanups.push(() => {
     mountObserver.disconnect();

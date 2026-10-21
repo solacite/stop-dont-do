@@ -240,7 +240,6 @@ async function attach(target, { source = readFileSync(INJECT, "utf8"), persist =
   });
   if (persist) {
     await send("Page.enable");
-    await send("Runtime.enable");
     await send("Runtime.addBinding", { name: "sddBridge" });
     await send("Page.addScriptToEvaluateOnNewDocument", { source });
   }
