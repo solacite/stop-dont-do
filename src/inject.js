@@ -865,6 +865,7 @@
       color: rgba(236,232,225,.75); font: inherit; letter-spacing: inherit; text-transform: inherit;
     }
     #sdd-spaces-menu button:hover { color: #ece8e1; background: rgba(236,232,225,.08); }
+    #sdd-spaces-menu .ws-pings { color: color-mix(in srgb, var(--sdd-acc, #ff4655) 75%, #ffffff); font-weight: 700; margin-right: 4px; }
     #sdd-spaces-menu button.on { color: #ece8e1; box-shadow: inset 3px 0 0 var(--sdd-acc, #ff4655); cursor: default; }
     /* play sits at the end of the top bar; on the background (dash mode, other pages) it hides */
     #sdd-home .nav button.play {
@@ -1617,8 +1618,49 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
   function workspaceItems() {
     const current = location.pathname.split("/")[2];
     return workspaceList()
-      .map((t) => `<button type="button" role="menuitem" class="${t.id === current ? "on" : ""}" data-team="${esc(t.id)}">${esc(t.name)}</button>`)
+      .map((t) => {
+        const n = otherPings.per[t.id];
+        const badge = n && t.id !== current ? `<span class="ws-pings">${n}</span>` : "";
+        return `<button type="button" role="menuitem" class="${t.id === current ? "on" : ""}" data-team="${esc(t.id)}">${badge}${esc(t.name)}</button>`;
+      })
       .join("");
+  }
+
+  // pings (mentions and dms) waiting in your other workspaces, for the count by spaces.
+  // the taskbar badge counts these too, but nothing in the current workspace shows them.
+  const otherPings = { at: 0, ws: null, per: {}, total: 0, loading: false };
+  async function refreshOtherPings() {
+    const current = location.pathname.split("/")[2];
+    if (otherPings.loading || (otherPings.ws === current && Date.now() - otherPings.at < 60000)) return;
+    otherPings.loading = true;
+    let teams = {};
+    try {
+      teams = JSON.parse(localStorage.getItem("localConfig_v2") || "{}").teams || {};
+    } catch {}
+    const per = {};
+    for (const t of workspaceList()) {
+      if (t.id === current) continue;
+      const full = teams[t.id];
+      try {
+        const route = t.id.startsWith("E") ? `${t.id}:${t.id}` : t.id;
+        const fd = new FormData();
+        fd.append("token", full.token);
+        const res = await fetch(`${full.url}api/client.counts?_x_gantry=true&fp=26&slack_route=${encodeURIComponent(route)}`, { method: "POST", body: fd, credentials: "include" });
+        const c = await res.json();
+        if (!c.ok) continue;
+        per[t.id] = [...(c.channels || []), ...(c.mpims || []), ...(c.ims || [])].reduce((n, x) => n + (x.mention_count || 0), 0) + (c.threads?.mention_count || 0);
+      } catch {}
+    }
+    Object.assign(otherPings, { per, total: Object.values(per).reduce((a, b) => a + b, 0), at: Date.now(), ws: current, loading: false });
+    markSpaces();
+  }
+  function markSpaces() {
+    const btn = homeEl?.querySelector('[data-act="spaces"]');
+    if (!btn) return;
+    const v = otherPings.total ? String(otherPings.total) : null;
+    if (v === null) btn.removeAttribute("data-badge");
+    else if (btn.getAttribute("data-badge") !== v) btn.setAttribute("data-badge", v);
+    btn.title = otherPings.total ? `${otherPings.total} ping${otherPings.total === 1 ? "" : "s"} in your other workspaces` : "Switch workspace";
   }
 
   // go straight to the workspace's address. slack's own switcher menu hangs off the
@@ -1706,6 +1748,8 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     pollApp();
     tuneVideoQuality();
     refreshHiddenMentions();
+    refreshOtherPings();
+    markSpaces();
     renderHiddenMentions();
     markRail();
     document.body.classList.toggle("sdd-dashmode", dashMode());
