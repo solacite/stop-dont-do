@@ -2065,9 +2065,8 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
       const box = row.parentElement;
       const set = box.classList.contains("grp") ? openGroups : expanded;
       const cls = box.classList.contains("grp") ? "open" : "expanded";
-      box.classList.toggle(cls);
-      box.classList.contains(cls) ? set.add(box.dataset.id) : set.delete(box.dataset.id);
-      return;
+      set.has(box.dataset.id) ? set.delete(box.dataset.id) : set.add(box.dataset.id);
+      return renderList();
     }
 
     const box = row.querySelector("input[type=checkbox]");
@@ -2300,20 +2299,21 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
         <span class="count">${hiddenCount ? `${chans.length - hiddenCount}/` : ""}${s.total}</span>
         ${chans.length ? `<button class="caret" title="Show channels">›</button>` : `<span class="caret"></span>`}
       </div>
-      <div class="chans">${shown
+      <div class="chans">${(open ? shown : [])
         .map((c) => {
           const on = !settings.hiddenChannels[c.id];
           return `<div class="row ${on ? "" : "off"}" data-ch="${esc(c.id)}">
             <input type="checkbox" ${on ? "checked" : ""} ${secOn ? "" : "disabled"}>
             <span class="icon">${ICONS[c.kind] || "#"}</span><span class="name">${esc(c.label)}</span></div>`;
         })
-        .join("")}${more}</div>
+        .join("")}${open ? more : ""}</div>
     </div>`;
   }
 
   function renderList() {
     const data = currentData();
-    if (!data?.sections || !panelEl) return;
+    // nothing to draw while the panel is closed; opening it redraws
+    if (!data?.sections || !panelEl?.classList.contains("open")) return;
     const list = panelEl.querySelector(".list");
     const top = list.scrollTop;
     const q = query;
@@ -2331,9 +2331,9 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
         if (b.loose) return sectionHtml(b.loose, data, q);
         const d = b.divider;
         const label = groupLabel(d.name);
-        const inner = b.sections.map((s) => sectionHtml(s, data, q)).join("");
+        const inner = openGroups.has(d.id) || q ? b.sections.map((s) => sectionHtml(s, data, q)).join("") : "";
         const groupMatch = !q || label.toLowerCase().includes(q);
-        if (!groupMatch && !inner) return "";
+        if (q && !groupMatch && !inner) return "";
         const ids = [d.id, ...b.sections.map((s) => s.id)];
         const shownCount = ids.filter((id) => !settings.hiddenSections[id]).length;
         const state = shownCount === ids.length ? "checked" : "";
@@ -2365,6 +2365,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     const barShown = nav && (homeOpen || homeEl.classList.contains("bg")) && homeEl.style.visibility !== "hidden";
     panelEl.style.top = barShown ? `${Math.round(nav.getBoundingClientRect().bottom)}px` : "";
     panelEl.classList.toggle("open", open);
+    if (!open) panelEl.querySelector(".list").innerHTML = "";
     // the rail button shows as active while the panel is open, since it's also how you close it
     fabEl?.querySelector("button")?.classList.toggle("p-tab_rail__button--active", open);
     fabEl?.toggleAttribute("data-open", open);
