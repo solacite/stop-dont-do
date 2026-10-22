@@ -824,6 +824,14 @@
     body.sdd-dashmode [data-sdd-rail], body.sdd-dashmode .p-control_strip { display: none !important; }
     /* the wrapper is a grid with a fixed column for the rail; give that space back */
     body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
+    /* activity: no "Activity" title; its buttons move up to the end of the tabs row */
+    body.sdd-valorant .p-home_header--activity_inbox { position: relative; min-height: 0 !important; height: auto !important; justify-content: flex-start !important; padding-top: 8px; }
+    body.sdd-valorant .p-home_header--activity_inbox .p-dms_page_header__title { display: none !important; }
+    body.sdd-valorant .p-home_header--activity_inbox .activity_layout_header__contents { height: 0 !important; min-height: 0 !important; padding: 0 !important; overflow: visible; }
+    body.sdd-valorant .p-home_header--activity_inbox .activity_layout_header__buttons_container {
+      position: absolute; right: 14px; bottom: 0; height: 33px; display: flex; align-items: center; z-index: 1;
+    }
+    body.sdd-valorant .p-home_header--activity_inbox .activity_layout_header__tabs { padding-right: 150px; box-sizing: border-box; }
     /* pages laid out by class get the rail's leftover width in their first column (see fitPanes) */
     body.sdd-dashmode [class*="tabpanelSidebarPrimarySecondary__"] { grid-template-columns: var(--ia4-layout-sidebar-width) minmax(0, 1fr) var(--ia4-layout-secondary-width); }
     body.sdd-dashmode [class*="tabpanelPrimarySecondary__"] { grid-template-columns: minmax(0, 1fr) var(--ia4-layout-secondary-width); }
