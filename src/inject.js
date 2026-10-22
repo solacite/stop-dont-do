@@ -479,10 +479,11 @@
     fitPanes();
   }
 
-  // slack writes the pane widths into a <style> of its own, in px worked out as if the left rail
-  // were there. in dash mode the rail is gone, so with a thread or profile open a strip the rail's
-  // width sat empty on the right. this copies slack's columns with the message column made
-  // flexible, and follows along whenever slack rewrites them (resizing, opening a panel).
+  // slack works out the pane widths in px as if the left rail were there. in dash mode the rail
+  // is gone, so with a thread, profile or activity item open a strip the rail's width sat empty on
+  // the right. slack has two ways of setting them: some pages get a <style> of its own (handled
+  // here: copy its columns with the message column made flexible, and follow along whenever slack
+  // rewrites them), others a layout class with width variables (handled in VALORANT_CSS).
   let paneSrc = null;
   let paneObs = null;
   let paneStyle = null;
@@ -490,14 +491,15 @@
     if (!paneSrc?.isConnected) {
       paneObs?.disconnect();
       paneSrc = [...document.querySelectorAll("style")].find((el) => el.textContent.includes(".p-client_workspace__tabpanel {"));
-      if (!paneSrc) return;
-      paneObs = new MutationObserver(writePaneCss);
-      paneObs.observe(paneSrc, { childList: true, characterData: true, subtree: true });
+      if (paneSrc) {
+        paneObs = new MutationObserver(writePaneCss);
+        paneObs.observe(paneSrc, { childList: true, characterData: true, subtree: true });
+      }
       writePaneCss();
     }
   }
   function writePaneCss() {
-    const m = paneSrc.textContent.match(/client_workspace__tabpanel\s*\{[^}]*grid-template-columns:\s*([^;]+);[^}]*grid-template-areas:\s*['"]([^'"]+)['"]/);
+    const m = paneSrc?.isConnected && paneSrc.textContent.match(/client_workspace__tabpanel\s*\{[^}]*grid-template-columns:\s*([^;]+);[^}]*grid-template-areas:\s*['"]([^'"]+)['"]/);
     let css = "";
     if (m) {
       const cols = m[1].trim().split(/\s+/);
@@ -822,6 +824,10 @@
     body.sdd-dashmode [data-sdd-rail], body.sdd-dashmode .p-control_strip { display: none !important; }
     /* the wrapper is a grid with a fixed column for the rail; give that space back */
     body.sdd-dashmode .p-client_workspace_wrapper { grid-template-columns: 0 1fr !important; }
+    /* pages laid out by class get the rail's leftover width in their first column (see fitPanes) */
+    body.sdd-dashmode [class*="tabpanelSidebarPrimarySecondary__"] { grid-template-columns: var(--ia4-layout-sidebar-width) minmax(0, 1fr) var(--ia4-layout-secondary-width); }
+    body.sdd-dashmode [class*="tabpanelPrimarySecondary__"] { grid-template-columns: minmax(0, 1fr) var(--ia4-layout-secondary-width); }
+    body.sdd-dashmode [class*="tabpanelSidebarPrimary__"] { grid-template-columns: var(--ia4-layout-sidebar-width) minmax(0, 1fr); }
     body.sdd-dashmode .p-client_workspace_wrapper {
       margin-top: 64px !important; height: calc(100% - 104px) !important; position: relative; z-index: 9001; background: transparent !important;
     }
