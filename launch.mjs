@@ -3,7 +3,8 @@
 // into every slack window. keeps running so reloads and new windows get it too.
 
 import { execSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,7 +13,20 @@ const PORT = Number(process.env.SDD_PORT || 9333);
 const BASE = `http://127.0.0.1:${PORT}`;
 const INJECT = join(here, "src", "inject.js");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = (...a) => console.log("[stop-dont-do]", ...a);
+// start-slack.vbs runs this without a console, so everything also goes to a log file
+const LOG_FILE = join(tmpdir(), "stop-dont-do.log");
+try {
+  if (statSync(LOG_FILE).size > 1e6) writeFileSync(LOG_FILE, "");
+} catch {}
+const log = (...a) => {
+  console.log("[stop-dont-do]", ...a);
+  try {
+    appendFileSync(LOG_FILE, `${new Date().toISOString()} ${a.join(" ")}\n`);
+  } catch {}
+};
+// a stray error (a socket dropping mid-reload, say) shouldn't take the mod down with it
+process.on("uncaughtException", (e) => log("error:", e?.stack || e));
+process.on("unhandledRejection", (e) => log("error:", e?.stack || e));
 
 function findSlack() {
   if (process.env.SLACK_PATH) return process.env.SLACK_PATH;

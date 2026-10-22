@@ -42,5 +42,6 @@ then open slack from "Slack (stop dont do)" instead of the normal slack icon.
 ## notes
 
 - while the launcher is running, other programs on your computer could connect to the debug port and control slack. stop the launcher / restart slack normally to close it.
+- the launcher logs to `stop-dont-do.log` in your temp folder (`%TEMP%` on windows). if the mod ever turns off, that's where to look.
 - set `SDD_PORT` to use a different port, or `SLACK_PATH` if slack isn't found.
 - slack can rename its css classes at any time. if the sidebar stops hiding things, that's probably why.
