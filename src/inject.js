@@ -477,6 +477,37 @@
       for (const side of tp.querySelectorAll(".p-view_contents--sidebar")) setMark(side, "data-sdd-chanpane", !!list && side.contains(list));
     }
     fitPanes();
+    checkProfileReturn();
+  }
+
+  // slack opens a profile picked from a members list over in home (your last channel), wherever
+  // you were. remember the tab you clicked it from, and once that profile is closed, go back.
+  const activeTab = () => document.querySelector(".p-tab_rail__button--active[data-qa]")?.getAttribute("data-qa");
+  let profileReturn = null; // { tab, at, path? }
+  function onMemberClick(e) {
+    const row = e.target.closest('[data-qa="ia-details-popover-members-content"] button');
+    if (!row || row.closest('[data-qa="invite-members"]')) return;
+    const tab = activeTab();
+    profileReturn = tab && tab !== "tab_rail_home_button" ? { tab, at: Date.now() } : null;
+  }
+  document.addEventListener("click", onMemberClick, true);
+  cleanups.push(() => document.removeEventListener("click", onMemberClick, true));
+  function checkProfileReturn() {
+    if (!profileReturn) return;
+    const open = activeTab() === "tab_rail_home_button" && !!document.querySelector(".p-view_contents--secondary");
+    if (!profileReturn.path) {
+      // waiting for slack to make the jump; give up if it never comes
+      if (open) profileReturn.path = location.pathname;
+      else if (Date.now() - profileReturn.at > 4000) profileReturn = null;
+      return;
+    }
+    // you went somewhere else from the profile (another tab, a channel): stay there
+    if (activeTab() !== "tab_rail_home_button" || location.pathname !== profileReturn.path) return void (profileReturn = null);
+    if (open) return;
+    const { tab } = profileReturn;
+    profileReturn = null;
+    document.querySelector(`[data-qa="${tab}"]`)?.click();
+    setTimeout(markNav, 300);
   }
 
   // slack works out the pane widths in px as if the left rail were there. in dash mode the rail
