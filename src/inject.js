@@ -1717,15 +1717,24 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
   async function openRailTab(qa, label) {
     const tab = document.querySelector(`[data-qa="${qa}"]`);
     if (tab) return tab.click();
-    if (RAIL_SHORTCUTS[qa] && typeof window.sddBridge === "function") return bridge(null, { name: RAIL_SHORTCUTS[qa] }, "shortcut");
+    // off the rail it lives in slack's "more" menu: open that unseen and pick it from there
     const more = document.querySelector('[data-qa="tab_rail_browse_button"]');
-    if (!more) return;
-    more.click();
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 50));
-      const item = [...document.querySelectorAll('.ReactModal__Content [data-qa="menu_item_button"]')].find((el) => el.textContent.trim().toLowerCase().startsWith(label.toLowerCase()));
-      if (item) return item.click();
+    if (more) {
+      document.body.classList.add("sdd-quietmenu");
+      try {
+        more.click();
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+          const item = [...document.querySelectorAll('.ReactModal__Content [data-qa="menu_item_button"]')].find((el) => el.textContent.trim().toLowerCase().startsWith(label.toLowerCase()));
+          if (item) return item.click();
+        }
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      } finally {
+        setTimeout(() => document.body.classList.remove("sdd-quietmenu"), 100);
+      }
     }
+    // last resort: slack's keyboard shortcut for that rail slot
+    if (RAIL_SHORTCUTS[qa] && typeof window.sddBridge === "function") return bridge(null, { name: RAIL_SHORTCUTS[qa] }, "shortcut");
   }
 
   // the workspaces you're signed into, one per name (an org and its workspace share one)
@@ -2018,6 +2027,8 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     #sdd-panel .ui-title { font-size: 11px; color: var(--fg2); margin: 4px 0; font-weight: 600; }
     #sdd-panel .ui-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 0; cursor: pointer; }
     #sdd-panel .ui-item.silent { margin: 2px 0 6px; }
+    /* slack's "more" menu while we pick something from it for you */
+    body.sdd-quietmenu .ReactModal__Overlay { opacity: 0 !important; }
     body.sdd-silent #sdd-home .nav button[data-badge]::before, body.sdd-silent .ws-pings { display: none !important; }
     #sdd-panel .ui-item.off .name { color: var(--fg2); text-decoration: line-through; }
     #sdd-panel footer { padding: 10px 18px; border-top: 1px solid var(--line); color: var(--fg2); font-size: 12px; }
@@ -2107,6 +2118,26 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     }
   }
 
+  // slack sometimes moves to-dos off the rail into its "more" menu, which you may have hidden;
+  // while it's off the rail, keep a to-dos button of our own there
+  const TODO_ICON = `<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M6.8 10.2l2.2 2.2 4.2-4.6"/></svg>`;
+  let todosEl = null;
+  function mountTodosButton() {
+    if (document.querySelector('.p-tab_rail__tab_menu [data-qa="tab_rail_later_button"]')) {
+      todosEl?.remove();
+      todosEl = null;
+      return;
+    }
+    if (!todosEl?.isConnected) {
+      todosEl?.remove();
+      todosEl = cloneRailButton("sdd-todos-holder", "To-dos", "To-dos", TODO_ICON, () => openRailTab("tab_rail_later_button", "To-dos"));
+      if (!todosEl) return;
+      document.getElementById("sdd-rail-holder")?.before(todosEl);
+    }
+    todosEl.querySelector("button")?.classList.toggle("p-tab_rail__button--active", location.pathname.split("/")[3] === "to-dos");
+  }
+  cleanups.push(() => todosEl?.remove());
+
   // silent mode: slack's own "pause notifications" in every signed-in workspace, renewed while
   // it's on so it never runs out, and the unread counts on the dash bar hidden too. a pause you
   // set yourself is left alone, and turning silent mode off only ends the pauses it started.
@@ -2146,6 +2177,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
     document.head.appendChild(baseStyle);
 
     mountRailButton();
+    mountTodosButton();
 
     panelEl = h(`<aside id="sdd-panel" aria-label="stop dont do">
       <header><h2>Sidebar & themes</h2></header>
@@ -2579,6 +2611,7 @@ ${scoped("body.sdd-dashmode .p-client_workspace_wrapper", selectors.filter((x) =
       const list = document.querySelector(".p-channel_sidebar__list .c-virtual_list__scroll_container");
       if (list !== observedList) layoutSidebar();
       mountRailButton();
+      mountTodosButton();
       markUi();
       mountFx();
       applySilent(false);
